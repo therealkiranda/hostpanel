@@ -1,37 +1,57 @@
-# HostPanel 1.0
+# 🚀 HostPanel 1.0
 
-A small, fast hosting control panel for **Ubuntu + Nginx + PHP-FPM + MariaDB**. Think "CloudPanel / cPanel, but yours and tiny".
+![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
+![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
+![PHP](https://img.shields.io/badge/PHP-777BB4?style=for-the-badge&logo=php&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![MariaDB](https://img.shields.io/badge/MariaDB-003545?style=for-the-badge&logo=mariadb&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Let's Encrypt](https://img.shields.io/badge/Let's%20Encrypt-003A70?style=for-the-badge&logo=letsencrypt&logoColor=white)
 
-- Websites: PHP / WordPress, Laravel, and reverse-proxy (Node, Python, anything on a local port)
-- **Free Let's Encrypt SSL for every site** (automatic, auto-renewing)
-- **Panel on your own domain** (`https://panel.yourdomain.com`) with its own certificate, as well as `IP:8443`
-- File manager, uploads up to 1 GB, code editor, SFTP-only site users (no shell), cron, logs
-- Databases, backups (manual, daily schedule, restore, off-server copy with rclone)
-- Security score, Fail2ban, firewall status, 2FA, audit log, system updates, services
+> A lightweight, blazing-fast hosting control panel for **Ubuntu + Nginx + PHP-FPM + MariaDB**.  
+> *Think "CloudPanel / cPanel, but open, minimal, and entirely yours."*
 
 ---
 
-## 1. What you need
+## 📌 Overview
 
-| | |
-|---|---|
-| Server | A **fresh** Ubuntu 22.04 / 24.04 / 26.04 VPS, 1 GB RAM or more |
-| Access | root (or a sudo user) over SSH |
-| Cloud firewall | Allow inbound **22, 80, 443 and 8443** (AWS Lightsail: *Networking* tab -> add rules) |
-| A domain | Optional but recommended: for the panel and for your websites |
+HostPanel gives you absolute control over your web server without the bloat of traditional panels. It provides automated security, effortless SSL provisioning, background backup routines, and isolated site environments—all optimized for low-resource VPS setups.
 
-> First time? Take a **snapshot** of the fresh server before installing, so you can roll back.
+- 🌐 **Websites & Proxies:** Native support for PHP / WordPress, Laravel, or custom reverse-proxies (Node.js, Python, Go, etc.).
+- 🔒 **Automated SSL:** Free, auto-renewing Let's Encrypt SSL certificates for every hosted site.
+- 🎯 **Custom Panel Domain:** Run your control panel securely under `https://panel.yourdomain.com` with valid certificates alongside standard direct port access (`IP:8443`).
+- 📁 **File & Site Management:** Built-in web File Manager, 1GB upload limit, embedded code editor, and SFTP-only isolated site users (strictly no shell access).
+- 💾 **Backups & Recovery:** Scheduled or manual backups, easy multi-point restores, and off-server destination sync powered by `rclone`.
+- 🛡️ **Hardened Security:** Security score analysis, Fail2ban integration, UFW status monitoring, 2FA authentication, activity audit logging, and automated updates.
 
-## 2. Install (about 5-10 minutes)
+---
 
-**a) Copy the zip to your server.** From your computer or Termux:
+## ⚙️ System Requirements
 
+| Requirement | Specification |
+| :--- | :--- |
+| **OS** | Fresh installation of **Ubuntu 22.04 LTS / 24.04 LTS / 26.04 LTS** |
+| **Resources** | Minimum **1 GB RAM** |
+| **Access** | `root` or a user with elevated `sudo` privileges via SSH |
+| **Inbound Ports** | Open ports: **`22`**, **`80`**, **`443`**, and **`8443`** |
+
+> [!TIP]
+> **First time installing?** Take a server **snapshot** prior to running the installer so you can easily roll back if necessary.
+
+---
+
+## ⚡ Quick Start & Installation
+
+The installation routine takes approximately 5–10 minutes and automatically configures Nginx, PHP-FPM, MariaDB (bound to localhost), Certbot, Fail2ban, UFW, security updates, swap memory, and the core panel application.
+
+### 1. Upload Assets
+From your local terminal or Termux, upload the release package to your server:
 ```bash
 scp hostpanel-1.0.zip root@YOUR_SERVER_IP:/root/
 ```
 
-**b) On the server:**
-
+### 2. Execute Installer
+Connect via SSH and execute the setup script:
 ```bash
 ssh root@YOUR_SERVER_IP
 apt-get update && apt-get install -y unzip
@@ -40,98 +60,135 @@ cd hostpanel-1.0
 sudo bash install.sh
 ```
 
-The installer sets up Nginx, PHP, MariaDB (localhost only), Certbot, Fail2ban, the firewall, automatic security updates, a swap file, and the panel itself. At the end it prints:
-
+Upon completion, your terminal will display your initial login details:
+```text
+Open:           https://YOUR_SERVER_IP:8443
+Panel user:     admin
+Panel password: <generated-password>
 ```
-Open:   https://YOUR_SERVER_IP:8443
-Panel user: admin
-Panel password: xxxxxxxxxxxxxxxx
-```
+*(Credentials are temporarily mirrored at `/root/hostpanel-credentials.txt` until changed.)*
 
-(The same details are saved in `/root/hostpanel-credentials.txt` until you change the password.)
+### 3. Initial Configuration
+1. Navigate to `https://YOUR_SERVER_IP:8443` in your browser. *(Bypass the initial self-signed SSL warning).*
+2. Sign in and immediately update your password (minimum 12 characters).
+3. Navigate to **Account → Enable 2FA** to pair your preferred authenticator app.
 
-**c) First login**
+---
 
-1. Open `https://YOUR_SERVER_IP:8443`. The browser warns about a self-signed certificate. That is normal until step 3.
-2. Sign in, and change the password when asked (12+ characters).
-3. **Account -> Enable 2FA** and scan the key with an authenticator app.
+## 🌐 Custom Panel Domain Setup
 
-## 3. Put the panel on your own domain (like cPanel / CloudPanel)
+Bind your administrative dashboard to your own domain name (e.g., `panel.yourdomain.com`):
 
-1. In your DNS, create an **A record**: `panel.yourdomain.com` -> your server IP.
-   *Using Cloudflare? Set the record to "DNS only" (grey cloud) until the certificate is issued. You can turn the proxy on afterwards.*
-2. In the panel: **Settings -> Panel domain**, enter `panel.yourdomain.com` and your email, press **Enable panel domain**.
-3. Watch **Tasks**. When it says *finished OK*, open `https://panel.yourdomain.com`. It now has a real Let's Encrypt certificate.
-4. Optional: **Settings -> Direct access on port 8443** to allow only your own IP on the raw port. The domain keeps working for everyone with a login.
+1. **DNS Setup:** Create an `A` record pointing `panel.yourdomain.com` to your server's IP address.
+   > *Note for Cloudflare users:* Set proxy mode to **DNS Only** (grey cloud) during initial SSL issuance. You may re-enable proxying afterwards.
+2. **Enable Domain:** Inside HostPanel, navigate to **Settings → Panel domain**. Enter `panel.yourdomain.com` and your contact email, then click **Enable panel domain**.
+3. **Verify:** Monitor the **Tasks** window. Once complete, visit `https://panel.yourdomain.com` to confirm valid Let's Encrypt SSL termination.
+4. *(Optional)* **Restrict Direct Access:** Go to **Settings → Direct access on port 8443** to restrict raw port access to specific IPs while keeping domain routing open.
 
-## 4. Add your first website
+---
 
-1. **Websites -> Add a website.** Enter the domain, choose the type and PHP version, keep *Let's Encrypt* ticked, press **Create website**.
-2. The panel shows the **SFTP username and password once**. Copy it.
-3. In your DNS, point the domain (and `www`) to the server IP. The panel retries the certificate every hour for 12 hours, or press **Get free SSL** on the site's page. **Check DNS** tells you what is wrong.
-4. Upload files with the **File Manager**, or with any SFTP client (host = server IP, port 22). From Termux:
-   ```bash
-   sftp wXXXXXXXXXX@YOUR_SERVER_IP
-   ```
-   Site users have **no shell** and cannot see anything outside their own folder.
+## 💻 Managing Websites
 
-**WordPress:** create a database in **Databases**, upload WordPress, and use `localhost` as the database host.
-**Node / Python app:** choose *Reverse proxy*, give the local port your app listens on (e.g. 3000). Nginx and SSL are handled for you.
+### Adding a New Site
+1. Go to **Websites → Add a website**.
+2. Enter your domain, select your runtime (PHP version or Reverse Proxy), keep **Let's Encrypt** toggled, and submit.
+3. Save the generated **SFTP credentials** (shown once).
 
-## 5. Backups
+### Deploying Content
+- **SFTP Access:** Use any standard client (Port: `22`, Host: Server IP, Credentials: site SFTP user). 
+  ```bash
+  sftp wXXXXXXXXXX@YOUR_SERVER_IP
+  ```
+  *Site users are strictly chrooted and restricted from accessing system directories.*
+- **File Manager:** Edit, upload, and modify site files directly via the panel UI.
 
-**Backups** page: back up one site, or everything. Turn on the **daily schedule**, and optionally add an off-server copy:
+### Stack Configuration Guides
+- **WordPress:** Create a database via **Databases**, upload WordPress core files, and set `localhost` as your database host.
+- **Node.js / Python / Go Apps:** Select **Reverse Proxy** during creation and specify the internal port your process binds to (e.g., `3000`). HostPanel handles Nginx proxying and SSL termination.
+
+---
+
+## 💾 Backups & Disaster Recovery
+
+HostPanel offers robust local and remote data preservation workflows:
+
+- **Local Backups:** Initiate single-site or full-server snapshots directly from the **Backups** tab.
+- **Automated Schedule:** Configure daily automated backup cycles within the dashboard UI.
+- **Remote / Off-Server Copies:** Integrate `rclone` to automatically offload backups to S3-compatible storage (Cloudflare R2, AWS S3, Backblaze B2, etc.):
+  ```bash
+  apt install rclone
+  rclone config   # Configure remote target (e.g., "r2")
+  ```
+  Specify your destination string (`r2:my-bucket/hostpanel`) in the HostPanel backup settings.
+- **Safe Restores & Deletions:** Restores automatically trigger a temporary safety backup before execution. Deleting sites or databases automatically creates a final preservation dump.
+
+---
+
+## 🛠️ Maintenance & CLI Commands
+
+If you lose access or encounter system issues, use the built-in emergency CLI utility via SSH:
 
 ```bash
-apt install rclone
-rclone config          # create a remote, e.g. "r2" for Cloudflare R2
+# Reset Panel Admin Password
+sudo hostpanel-cli reset-password
+
+# Disable Two-Factor Authentication (2FA)
+sudo hostpanel-cli disable-2fa
+
+# Remove IP restrictions on Port 8443
+sudo hostpanel-cli open-port
 ```
 
-then enter `r2:my-bucket/hostpanel` in the schedule form. **Restore** is on each backup row and takes a safety backup of the current state first. Deleting a site keeps a final backup unless you tick *skip*; deleting a database always keeps a final dump.
+### Troubleshooting Quick Reference
 
-## 6. If something goes wrong
+| Issue | Resolution / Diagnostic Command |
+| :--- | :--- |
+| **Panel won't start** | `journalctl -u hostpanel -n 50 --no-pager` |
+| **Nginx Syntax Errors** | `nginx -t` |
+| **SSL Issuance Failure** | Check **Tasks** log. Ensure `A` records are propagated and Cloudflare proxying is temporarily disabled. |
 
-| Problem | What to do |
-|---|---|
-| Forgot the password | `sudo hostpanel-cli reset-password` |
-| Lost 2FA device | `sudo hostpanel-cli disable-2fa` |
-| Locked out by the IP restriction | `sudo hostpanel-cli open-port` |
-| Panel will not start | `journalctl -u hostpanel -n 50 --no-pager` |
-| Certificate failed | Open the site, press **Check DNS**. The A record must point to this server, and the Cloudflare proxy must be off while issuing. Details are on the **Tasks** page |
-| Nginx problem | `nginx -t` shows the exact line |
+---
 
-## 7. Upgrade
+## 🔄 Upgrade Procedure
 
-Unzip the new version and run `sudo bash install.sh` again. Your sites, databases, settings and password are kept.
+Upgrading to new versions preserves all existing sites, settings, databases, and credentials:
 
-## 8. What changed from v2 to 1.0
-
-**Fixed**
-- RAM and disk bars always looked full (the security policy blocked their inline styles). Rebuilt without inline styles.
-- Memory leak: scanners hitting the panel created sessions forever. Sessions now exist only for the login page and signed-in users, with hard limits.
-- The Services page could stop the firewall. Firewall and SSH are now status-only.
-- Slow dashboard: update and security checks are cached and refreshed in the background.
-
-**Hardened**
-- Site users are SFTP-only and chrooted, with optional key-only login.
-- Each site's folder is private from other sites (files are `640`/`750`).
-- PHP execution is blocked in upload folders, and more dangerous PHP functions are disabled (strict mode, switchable).
-- Deleting a site or database needs you to type its name, and takes a final backup first (sites can skip it explicitly).
-- The file manager refuses to follow symlinks out of a site and cannot delete core folders.
-- X-Real-IP is trusted only from the local proxy, so fail2ban and rate limits see real client IPs and cannot be spoofed.
-
-**New**
-- Let's Encrypt for every site and the panel itself; own-domain panel access; restore; scheduled and off-server backups; per-site PHP settings; recovery CLI; new interface with dark and light themes.
-
-## 9. Layout
-
-```
-/opt/hostpanel/           panel code (server.js, worker.js, lib/, public/)
-/opt/hostpanel/data/      database file, panel certificate, audit log   (back this up)
-/opt/hostpanel/backups/   site and database backups
-/home/wXXXXXXXXXX/        one folder per site (public_html, tmp, logs)
+```bash
+unzip hostpanel-new-version.zip
+cd hostpanel-new-version
+sudo bash install.sh
 ```
 
-## Honest note on testing
+---
 
-This build was tested for everything that can run without a full server: all pages and forms, login, CSRF, sessions, file manager (including symlink and path-escape attempts), uploads, validation, rollback on failed site creation, and all generated Nginx configurations against a real `nginx -t`. The parts that need a live server and the internet (the installer end to end, Let's Encrypt issuance, SFTP chroot, PHP-FPM pools) could not be run here, so **do the first install on a fresh VPS or a snapshot** and tell me anything that misbehaves.
+## 📋 Changelog (v2 → v1.0)
+
+### 🐛 Bug Fixes
+- **UI Metrics Fix:** Resolved issue where RAM and disk consumption indicators appeared continuously full due to strict Content Security Policies blocking inline styles.
+- **Session Leak Prevention:** Mitigated session inflation caused by external scanners by isolating sessions strictly to login workflows and active users.
+- **Services Control:** Fixed an issue where managing services could inadvertently disable UFW. System firewall and SSH are now read-only status monitors.
+- **Dashboard Optimization:** Offloaded update and security evaluation routines to background cached execution.
+
+### 🛡️ Security Hardening
+- **Isolated Environments:** Site users are chrooted with SFTP-only permissions (`no-shell`) and support key-based authentication.
+- **Strict File Permissions:** Files are constrained per-site using `640`/`750` permission masks to prevent cross-site file reading.
+- **PHP Hardening:** Blocked direct execution of PHP files within upload directories; disabled high-risk system functions by default.
+- **Accidental Deletion Prevention:** Site/Database removal requires typing full entity names and forces a final backup generation.
+- **IP Spoofing Protection:** Proxy headers (`X-Real-IP`) are strictly validated against local proxy origin to ensure accurate Fail2ban IP capturing.
+
+---
+
+## 📂 System Layout
+
+```text
+/opt/hostpanel/           # Panel runtime assets (server.js, worker.js, lib/, public/)
+/opt/hostpanel/data/      # Internal SQLite database, panel SSL certs, audit logs
+/opt/hostpanel/backups/   # Local backup repository
+/home/wXXXXXXXXXX/        # Isolated site roots (public_html, tmp, logs)
+```
+
+---
+
+## 🧪 Testing & Verification Note
+
+This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
