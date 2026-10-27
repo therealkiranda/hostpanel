@@ -57,12 +57,15 @@ for d in /etc/php/*/fpm; do
 done
 
 step "Nginx hardening"
-if ! grep -Eq '^\s*server_tokens\s+off' /etc/nginx/nginx.conf; then
-  if grep -Eq '^\s*#\s*server_tokens' /etc/nginx/nginx.conf; then
-    sed -i -E 's/^\s*#\s*server_tokens.*/\tserver_tokens off;/' /etc/nginx/nginx.conf
-  else
-    echo 'server_tokens off;' > /etc/nginx/conf.d/00-hostpanel.conf
-  fi
+# Hide the Nginx version. Reuse whatever directive nginx.conf already has: a second one makes Nginx refuse to start.
+NGMAIN=/etc/nginx/nginx.conf
+rm -f /etc/nginx/conf.d/00-hostpanel.conf
+if grep -Eq '^\s*server_tokens\s' "$NGMAIN"; then
+  sed -i -E 's/^(\s*)server_tokens\s+[^;]*;/\1server_tokens off;/' "$NGMAIN"
+elif grep -Eq '^\s*#\s*server_tokens' "$NGMAIN"; then
+  sed -i -E '0,/^\s*#\s*server_tokens.*/s//\tserver_tokens off;/' "$NGMAIN"
+else
+  sed -i -E '0,/^\s*http\s*\{/s//http {\n\tserver_tokens off;/' "$NGMAIN"
 fi
 [ -f /etc/nginx/sites-available/default ] && cp -n /etc/nginx/sites-available/default /etc/nginx/sites-available/default.bak || true
 cat > /etc/nginx/sites-available/default <<'NG'
@@ -159,6 +162,8 @@ if [ ! -f "$BASE/data/panel.key" ]; then
   chmod 600 "$BASE/data/panel.key"
 fi
 
+# NOTE: no systemd sandboxing options on purpose. The panel is the server administrator: it creates users,
+# sets setgid folders, runs apt and certbot. Options like RestrictSUIDSGID / NoNewPrivileges break those jobs.
 cat > /etc/systemd/system/hostpanel.service <<'UNIT'
 [Unit]
 Description=HostPanel
@@ -171,15 +176,6 @@ WorkingDirectory=/opt/hostpanel
 Restart=always
 RestartSec=3
 User=root
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectKernelModules=yes
-ProtectKernelTunables=yes
-ProtectControlGroups=yes
-RestrictRealtime=yes
-RestrictSUIDSGID=yes
-LockPersonality=yes
-SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
