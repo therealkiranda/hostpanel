@@ -14,6 +14,6 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm test
-      - run: ./test/source-check.sh
+      - run: bash test/source-check.sh
       - name: Dependency advisories (informational)
         run: npm audit --omit=dev || true

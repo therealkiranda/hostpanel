@@ -22,7 +22,7 @@ jobs:
         run: |
           VER="${GITHUB_REF_NAME#v}"
           [ -n "$HOSTPANEL_SIGNING_KEY" ] || { echo "Secret HOSTPANEL_SIGNING_KEY is missing"; exit 1; }
-          tools/build-release.sh "$VER"
+          bash tools/build-release.sh "$VER"
           node tools/sign-manifest.js "$VER" "dist/hostpanel-$VER.tar.gz" > dist/manifest.json
           sha256sum "dist/hostpanel-$VER.tar.gz" > "dist/hostpanel-$VER.tar.gz.sha256"
       - name: Publish release
