@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HostPanel 1.0 installer - Ubuntu 22.04 / 24.04 / 26.04.
+# HostPanel 1.0.2 installer - Ubuntu 22.04 / 24.04 / 26.04.
 # Run from the unzipped folder:  sudo bash install.sh
 # Safe to run again: it upgrades the panel and keeps your data, sites and databases.
 set -euo pipefail
@@ -19,8 +19,11 @@ if [ "$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)" -lt 900 ]; then ech
 
 step "Swap file (small servers need it)"
 if [ "$(swapon --show | wc -l)" -eq 0 ]; then
-  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
-  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  if fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile; then
+    grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  else
+    echo "(could not create a swap file on this filesystem - continuing without it)"; rm -f /swapfile
+  fi
 fi
 
 step "Installing packages and security patches (this takes a few minutes)"
@@ -68,11 +71,24 @@ else
   sed -i -E '0,/^\s*http\s*\{/s//http {\n\tserver_tokens off;/' "$NGMAIN"
 fi
 [ -f /etc/nginx/sites-available/default ] && cp -n /etc/nginx/sites-available/default /etc/nginx/sites-available/default.bak || true
-cat > /etc/nginx/sites-available/default <<'NG'
+NGVER=$(nginx -v 2>&1 | sed -E 's/.*nginx\/([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+if [ "$(printf '%s\n%s\n' 1.19.4 "$NGVER" | sort -V | head -1)" = "1.19.4" ]; then
+  cat > /etc/nginx/sites-available/default <<'NG'
 # Unknown hostnames get nothing (no site leaks through the bare IP)
 server { listen 80 default_server; listen [::]:80 default_server; server_name _; return 444; }
 server { listen 443 ssl default_server; listen [::]:443 ssl default_server; server_name _; ssl_reject_handshake on; }
 NG
+else
+  # nginx < 1.19.4 (Ubuntu 22.04) has no ssl_reject_handshake: answer unknown names with a throw-away certificate and close the connection
+  install -d -m 755 /etc/nginx/hostpanel
+  [ -f /etc/nginx/hostpanel/default.key ] || openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout /etc/nginx/hostpanel/default.key -out /etc/nginx/hostpanel/default.crt -subj "/CN=invalid" 2>/dev/null
+  chmod 600 /etc/nginx/hostpanel/default.key
+  cat > /etc/nginx/sites-available/default <<'NG'
+# Unknown hostnames get nothing (no site leaks through the bare IP)
+server { listen 80 default_server; listen [::]:80 default_server; server_name _; return 444; }
+server { listen 443 ssl default_server; listen [::]:443 ssl default_server; server_name _; ssl_certificate /etc/nginx/hostpanel/default.crt; ssl_certificate_key /etc/nginx/hostpanel/default.key; return 444; }
+NG
+fi
 ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 mkdir -p /var/www/letsencrypt
 DB_SVC=mysql; if systemctl cat mariadb >/dev/null 2>&1 && ! systemctl cat mysql >/dev/null 2>&1; then DB_SVC=mariadb; fi
@@ -118,7 +134,7 @@ enabled = true
 [hostpanel]
 enabled = true
 backend = auto
-port = $PORT
+port = http,https,$PORT
 filter = hostpanel
 logpath = /var/log/hostpanel-auth.log
 maxretry = 5
@@ -142,20 +158,33 @@ ufw --force enable >/dev/null
 
 step "Installing panel files"
 install -d -m 755 "$BASE"
-install -d -m 700 "$BASE/data" "$BASE/backups"
+install -d -m 700 "$BASE/data" "$BASE/backups" "$BASE/updates"
 rm -rf "$BASE/lib" "$BASE/public"
 cp -a "$SRC/lib" "$SRC/public" "$BASE/"
 install -m 600 "$SRC/server.js" "$BASE/server.js"
 install -m 600 "$SRC/cli.js" "$BASE/cli.js"
 install -m 644 "$SRC/worker.js" "$BASE/worker.js"
 install -m 644 "$SRC/package.json" "$BASE/package.json"
+[ -f "$SRC/package-lock.json" ] && install -m 644 "$SRC/package-lock.json" "$BASE/package-lock.json"
 chmod -R go-w "$BASE/lib" "$BASE/public"
-chmod 755 "$BASE/lib" "$BASE/lib/tpl" "$BASE/public"
-chmod 644 "$BASE"/lib/*.js "$BASE"/lib/tpl/* "$BASE"/public/*
-(cd "$BASE" && npm install --omit=dev --no-audit --no-fund)
+# every folder 755 and every file 644 under lib/ and public/ (covers lib/routes and lib/apps too)
+find "$BASE/lib" "$BASE/public" -type d -exec chmod 755 {} +
+find "$BASE/lib" "$BASE/public" -type f -exec chmod 644 {} +
+chmod 755 "$BASE"
+install -d -m 755 "$BASE/bin"   # verified helper tools for the App Installer (WP-CLI); root-owned so a website can never replace them
+# Exact locked versions, no dependency install scripts (reproducible, and nothing runs as root from the registry).
+if [ -f "$BASE/package-lock.json" ]; then
+  (cd "$BASE" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
+else
+  (cd "$BASE" && npm install --omit=dev --ignore-scripts --no-audit --no-fund)
+fi
 (cd "$BASE" && npm audit --omit=dev || true)
 printf '#!/bin/sh\nexec /usr/bin/env node /opt/hostpanel/cli.js "$@"\n' > /usr/local/bin/hostpanel-cli
 chmod 755 /usr/local/bin/hostpanel-cli
+
+step "SSH login banner"
+# Shown on every interactive ssh login (password or key) through Ubuntu's pam_motd. Text: /etc/hostpanel/motd (never overwritten).
+node "$BASE/cli.js" motd install || echo "(could not install the SSH login banner - continuing)"
 
 if [ ! -f "$BASE/data/panel.key" ]; then
   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout "$BASE/data/panel.key" -out "$BASE/data/panel.crt" -subj "/CN=hostpanel" 2>/dev/null
@@ -198,5 +227,6 @@ echo " Next steps:"
 echo "  1. Sign in and change the password (Account page), then enable 2FA"
 echo "  2. Settings -> Panel domain: use  panel.yourdomain.com  with a free Let's Encrypt certificate"
 echo "  3. Open ports 22, 80, 443 and $PORT in your cloud firewall / security group"
+echo " Install WordPress or Laravel in one click:  App Installer (left menu)"
 echo " Locked out or forgot the password?   sudo hostpanel-cli reset-password"
 echo "========================================================="

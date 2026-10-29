@@ -1,0 +1,31 @@
+name: HostPanel release
+# Push a tag like v1.0.2 (it must match package.json) to publish a signed release that panels can install.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - name: Build and sign
+        env:
+          HOSTPANEL_SIGNING_KEY: ${{ secrets.HOSTPANEL_SIGNING_KEY }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          [ -n "$HOSTPANEL_SIGNING_KEY" ] || { echo "Secret HOSTPANEL_SIGNING_KEY is missing"; exit 1; }
+          tools/build-release.sh "$VER"
+          node tools/sign-manifest.js "$VER" "dist/hostpanel-$VER.tar.gz" > dist/manifest.json
+          sha256sum "dist/hostpanel-$VER.tar.gz" > "dist/hostpanel-$VER.tar.gz.sha256"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "HostPanel $GITHUB_REF_NAME" --generate-notes

@@ -1,6 +1,6 @@
 {
   "name": "hostpanel",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "description": "HostPanel - lightweight hosting control panel for Ubuntu + Nginx + PHP-FPM + MariaDB",
   "main": "server.js",
@@ -12,5 +12,8 @@
     "bcryptjs": "^2.4.3",
     "express": "^4.21.2",
     "express-session": "^1.18.1"
+  },
+  "scripts": {
+    "test": "node test/tenancy.js && node test/privileged-protocol.js && node test/privileged-client.js && node test/wordpress-installer.js && node test/apps-engine.js && node test/apps-handlers.js && node test/apps-download.js && node test/apps-e2e.js && node test/motd.js && node test/updater.js && node test/username-validation.js && node test/template-check.js && node test/nginx-template-smoke.js && node test/archive-check.js && node test/update-service.js && node test/sites-safety.js && node test/server-e2e.js"
   }
 }

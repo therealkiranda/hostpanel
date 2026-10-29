@@ -1,0 +1,10 @@
+'use strict';
+const assert = require('assert');
+const { validateRequest } = require('../lib/privileged-protocol');
+const base = { id: '0123456789abcdef0123456789abcdef', version: 1, operation: 'site.create', args: { domain: 'example.com', type: 'php', phpVersion: '8.3', ownerId: 'a'.repeat(32) } };
+assert.equal(validateRequest(base), base);
+assert.throws(() => validateRequest({ ...base, args: { ...base.args, path: '/etc/passwd' } }), /Unknown operation argument/);
+assert.throws(() => validateRequest({ ...base, args: { ...base.args, domain: '../../etc' } }), /Invalid domain/);
+assert.throws(() => validateRequest({ ...base, operation: 'exec', args: { command: 'sh' } }), /not allowed/);
+assert.throws(() => validateRequest({ ...base, operation: 'service.reload', args: { service: 'ssh' } }), /allowlisted/);
+console.log('privileged RPC schema tests passed');

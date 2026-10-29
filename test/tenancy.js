@@ -1,0 +1,15 @@
+'use strict';
+const assert = require('assert');
+const T = require('../lib/tenancy');
+const db = { admin: { user: 'admin' }, sites: [{ domain: 'legacy.example.com' }], dbs: [] };
+T.normalizeDatabase(db);
+assert.equal(db.sites[0].ownerId, 'system');
+const u = T.createUser(db, { username: 'customer1', email: 'customer@example.com', password: 'correct horse battery staple', role: 'customer' }, (p) => 'test-hash:' + p);
+assert.ok(u.id && !u.passwordHash);
+const site = { domain: 'a.example.com', ownerId: u.id };
+assert.equal(T.owns({ id: u.id, tenantId: u.id, role: 'customer' }, site), true);
+assert.equal(T.owns({ id: 'other', tenantId: 'other', role: 'customer' }, site), false);
+assert.throws(() => T.assertOwns({ id: 'other', tenantId: 'other', role: 'customer' }, site), /not found/);
+assert.equal(T.owns({ id: 'root', role: 'super_admin' }, site), true);
+assert.throws(() => T.createUser(db, { username: 'admin2', email: 'x@example.com', password: 'correct horse battery staple', role: 'super_admin' }, (p) => 'test-hash:' + p), /cannot create/);
+console.log('tenant schema/ownership tests passed');

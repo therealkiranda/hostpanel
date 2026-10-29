@@ -1,38 +1,32 @@
 'use strict';
-// HostPanel 1.0 - web server and pages.
+// HostPanel 1.0.2 - web server and pages.
 const express = require('express');
 const session = require('express-session');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn, execFileSync } = require('child_process');
+const { spawn } = require('child_process');
 const c = require('./lib/core');
 const sys = require('./lib/sys');
 const S = require('./lib/sites');
+const { createApps } = require('./lib/apps');
+const siteexec = require('./lib/siteexec');
 const ui = require('./lib/ui');
+const { createService } = require('./lib/update-service');
 const { P, PORT, IS_ROOT, VERSION, rand, esc, sh, errMsg, safeEq, fmtSize, fmtDate, bcrypt, audit, load, save } = c;
 const { layout, csrf, q, fbtn, badge, meter, stat, field, sel, table } = ui;
 
 const BASE = P.BASE;
 const MAX_UPLOAD = 1024 * 1024 * 1024;
+let updater = null;
+try { updater = createService({ base: BASE, port: PORT, version: VERSION, checkDisk: () => sys.requireDisk(BASE, 90, 'the update') }); } catch (e) { console.error('[hostpanel] release updater disabled: ' + errMsg(e)); }
 const DB0 = c.init();
 if (IS_ROOT) S.ensureBase();
 sys.discoverIp();
 
-/* ================= file-manager plumbing (runs worker.js as the site user) ================= */
-const idCache = {};
-function fmOpts(s) {
-  const o = { cwd: s.home, env: { PATH: '/usr/bin:/bin', HOME: s.home, LANG: 'C.UTF-8' } };
-  if (IS_ROOT) {
-    if (!idCache[s.user]) idCache[s.user] = { uid: parseInt(sh('id', ['-u', s.user]), 10), gid: parseInt(sh('id', ['-g', s.user]), 10) };
-    o.uid = idCache[s.user].uid; o.gid = idCache[s.user].gid;
-  }
-  return o;
-}
-const WORKER = path.join(__dirname, 'worker.js');
-const fm = (s, op, rel, arg, input) => execFileSync(process.execPath, [WORKER, op, s.home, rel || '/', arg || ''],
-  Object.assign({ encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000, maxBuffer: 16 * 1048576 }, fmOpts(s)));
+/* ================= file-manager plumbing (runs worker.js as the site user; shared with the app installer) ================= */
+const { fmOpts, worker: fm, WORKER } = require('./lib/siteexec');
 const normRel = (p) => path.posix.normalize('/' + String(p || '')).replace(/\/+$/, '') || '/';
 const okName = (n) => { n = String(n || ''); if (!n || n === '.' || n === '..' || /[\/\0]/.test(n) || n.length > 255 || /^\.hp-up-/.test(n)) throw new Error('Invalid name'); return n; };
 const tmpName = () => '.hp-up-' + rand(6);
@@ -73,6 +67,14 @@ app.use(session({
   name: '__Host-hp.sid', secret: DB0.secret, store, resave: false, saveUninitialized: false, rolling: true,
   cookie: { httpOnly: true, secure: true, sameSite: 'strict', path: '/', maxAge: 30 * 60 * 1000 }
 }));
+// A password/username change (or hostpanel-cli reset) bumps admin.sv, which signs out every older session.
+app.use((req, res, next) => {
+  if (req.session && req.session.user) {
+    let sv = 0; try { sv = load().admin.sv; } catch (e) {}
+    if (req.session.sv !== sv) { delete req.session.user; delete req.session.sv; delete req.session.csrf; delete req.session.pendingTotp; }
+  }
+  next();
+});
 const smallBody = express.urlencoded({ extended: false, limit: '20kb' });
 const bigBody = express.urlencoded({ extended: false, limit: '4mb' });
 app.use((req, res, next) => {
@@ -104,6 +106,12 @@ const wrap = (fn, back, action) => (req, res) => {
   audit(req, (action || req.path) + (ok ? '' : ' FAILED'), req.body.domain || req.body.name || req.body.site || '');
   res.redirect(typeof back === 'function' ? back(req) : back);
 };
+const awrap = (fn, back, action) => async (req, res) => {
+  let ok = true;
+  try { const m = await fn(req, res); if (m) req.session.flash = { t: 'ok', m }; } catch (e) { ok = false; req.session.flash = { t: 'err', m: errMsg(e) }; }
+  audit(req, (action || req.path) + (ok ? '' : ' FAILED'), req.body.domain || req.body.name || req.body.site || '');
+  res.redirect(typeof back === 'function' ? back(req) : back);
+};
 const page = (req, res, title, body, opts) => res.send(layout(req, title, body, opts));
 const siteBack = (req) => '/sites/manage?' + q({ domain: String(req.body.domain || '') });
 const viaDomain = (req) => !!(req.headers['x-hp-proxy'] && safeEq(req.headers['x-hp-proxy'], c.getProxySecret()));
@@ -121,18 +129,23 @@ app.post('/login', (req, res) => {
   const ipa = c.cleanIp(req), now = Date.now();
   const rec = (fails.get(ipa) || []).filter((t) => now - t < 900000); fails.set(ipa, rec);
   gfails = gfails.filter((t) => now - t < 900000);
-  if (rec.length >= 5 || gfails.length >= 25) { req.session.flash = { t: 'err', m: 'Too many failed attempts. Try again in 15 minutes.' }; return res.redirect('/login'); }
   const d = load();
+  // The all-visitors lockout (25 failures) must not let strangers lock the real admin out: addresses that have
+  // signed in successfully before are exempt from it (they still have the per-address limit of 5).
+  const known = d.admin.knownIps.includes(ipa);
+  if (rec.length >= 5 || (gfails.length >= 25 && !known)) { req.session.flash = { t: 'err', m: 'Too many failed attempts. Try again in 15 minutes.' }; return res.redirect('/login'); }
   const userOk = safeEq(String(req.body.user || ''), d.admin.user);
   const passOk = bcrypt.compareSync(String(req.body.pass || ''), userOk ? d.admin.hash : DUMMY_HASH);
   let ok = userOk && passOk;
-  if (ok && d.admin.totp) { ok = c.totpCheck(d.admin.totp, req.body.code, d); if (ok) save(d); }
+  if (ok && d.admin.totp) ok = c.totpCheck(d.admin.totp, req.body.code, d);
   if (!ok) {
     rec.push(now); gfails.push(now); c.authFail(req, req.body.user); audit(req, 'LOGIN_FAIL', '');
     req.session.flash = { t: 'err', m: 'Invalid credentials' }; return res.redirect('/login');
   }
   fails.delete(ipa);
-  req.session.regenerate(() => { req.session.user = d.admin.user; req.session.csrf = rand(16); audit(req, 'LOGIN', ''); res.redirect('/'); });
+  d.admin.knownIps = [ipa].concat(d.admin.knownIps.filter((x) => x !== ipa)).slice(0, 20);
+  save(d);
+  req.session.regenerate(() => { req.session.user = d.admin.user; req.session.sv = d.admin.sv; req.session.csrf = rand(16); audit(req, 'LOGIN', ''); res.redirect('/'); });
 });
 app.post('/logout', (req, res) => { audit(req, 'LOGOUT', ''); req.session.destroy(() => res.redirect('/login')); });
 
@@ -163,15 +176,16 @@ app.get('/', auth, (req, res) => {
 /* ================= websites ================= */
 app.get('/sites', auth, (req, res) => {
   const d = load(), php = sys.phpVersions();
-  const rows = d.sites.map((s) => '<tr><td><a href="/sites/manage?' + q({ domain: s.domain }) + '"><b>' + esc(s.domain) + '</b></a></td><td>' + badge(s.type === 'proxy' ? 'Proxy :' + s.port : (s.type === 'laravel' ? 'Laravel' : 'PHP ' + s.php)) + '</td><td>' + sslBadge(s) + '</td><td class="mono">' + esc(s.user) + '</td><td class="acts">' +
+  const rows = d.sites.map((s) => '<tr><td><a href="/sites/manage?' + q({ domain: s.domain }) + '"><b>' + esc(s.domain) + '</b></a></td><td>' + badge(s.type === 'proxy' ? 'Proxy :' + s.port : (s.type === 'static' ? 'Static HTML' : (s.type === 'laravel' ? 'Laravel' : 'PHP ' + s.php))) + '</td><td>' + sslBadge(s) + '</td><td class="mono">' + esc(s.user) + '</td><td class="acts">' +
     '<a class="btn g s" href="/sites/manage?' + q({ domain: s.domain }) + '">Manage</a><a class="btn g s" href="/files?' + q({ site: s.domain, p: '/public_html' }) + '">Files</a></td></tr>');
   const form = '<div class="card section"><h2>Add a website</h2><form method="post" action="/sites/add" data-nolock>' + csrf(req) + '<div class="fgrid">' +
     field('Domain', '<input name="domain" placeholder="example.com" required>', 'Point an A record for the domain and www to ' + esc(d.settings.ip || 'this server') + '.') +
-    field('Type', sel('type', [['php', 'PHP / WordPress'], ['laravel', 'Laravel (public/ folder)'], ['proxy', 'Reverse proxy (Node, Python, ...)']], 'php')) +
+    field('Type', sel('type', [['php', 'PHP website'], ['laravel', 'Laravel (public/ folder)'], ['static', 'Static HTML'], ['proxy', 'Reverse proxy (Node, Python, ...)']], 'php')) +
     field('PHP version', sel('php', php.map((v) => [v, 'PHP ' + v]), php[php.length - 1])) +
     field('Proxy port', '<input name="port" type="number" min="1024" max="65535" placeholder="3000">', 'Only for the proxy type') +
     field('Let\'s Encrypt email', '<input name="email" type="email" value="' + esc(d.email) + '" placeholder="you@example.com">') + '</div>' +
-    '<div class="check"><input type="checkbox" id="as" name="autoSsl" value="1" checked><label for="as">Get a free Let\'s Encrypt SSL certificate automatically (retries until DNS is ready)</label></div><button>Create website</button></form></div>';
+    '<div class="check"><input type="checkbox" id="as" name="autoSsl" value="1" checked><label for="as">Get a free Let\'s Encrypt SSL certificate automatically (retries until DNS is ready)</label></div><button>Create website</button></form>' +
+    '<p class="muted">Want WordPress or Laravel ready to use? Open the <a href="/apps">App Installer</a>: it creates the website, database and first login in one step.</p></div>';
   page(req, res, 'Websites', form + '<div class="sec-h"><h2>Your websites</h2></div>' + table(['Domain', 'Type', 'SSL', 'SFTP user', 'Actions'], rows, 'No websites yet. Add your first one above.'));
 });
 app.post('/sites/add', auth, wrap((req) => S.createSite(req.body), '/sites', 'SITE_ADD'));
@@ -201,7 +215,7 @@ app.get('/sites/manage', auth, async (req, res) => {
     '<form class="row" method="post" action="/sites/ssl" data-nolock>' + csrf(req) + '<input type="hidden" name="domain" value="' + esc(dom) + '"><input type="email" name="email" value="' + esc(d.email) + '" placeholder="Email for Let\'s Encrypt" required>' + (s.ssl ? '<input type="hidden" name="force" value="1">' : '') + '<button>' + (s.ssl ? 'Renew now' : 'Issue certificate') + '</button></form>' +
     '<div class="row-acts"><a class="btn g s" href="/sites/manage?' + q({ domain: dom, dns: '1' }) + '">Check DNS</a> ' + fbtn(req, '/sites/autossl', { domain: dom, on: s.autoSsl ? '0' : '1' }, s.autoSsl ? 'Stop auto-retry' : 'Auto-retry hourly', 'g') +
     (s.ssl ? ' ' + fbtn(req, '/sites/ssl/off', { domain: dom }, 'Remove SSL', 'd', 'data-confirm="Remove the certificate? The site will only work over http."') : '') + '</div></div>';
-  const phpCard = s.type === 'proxy' ? '' : '<div class="card"><h2>PHP settings</h2><form method="post" action="/sites/php" data-nolock>' + csrf(req) + '<input type="hidden" name="domain" value="' + esc(dom) + '"><div class="fgrid">' +
+  const phpCard = (s.type === 'proxy' || s.type === 'static') ? '' : '<div class="card"><h2>PHP settings</h2><form method="post" action="/sites/php" data-nolock>' + csrf(req) + '<input type="hidden" name="domain" value="' + esc(dom) + '"><div class="fgrid">' +
     field('PHP version', sel('php', php.map((v) => [v, 'PHP ' + v]), s.php)) + field('Memory limit', '<input name="memory" value="' + esc(cfg.memory) + '">') + field('Upload / post limit', '<input name="upload" value="' + esc(cfg.upload) + '">') +
     field('Max execution (sec)', '<input name="exec" type="number" value="' + cfg.exec + '">') + field('Max PHP workers', '<input name="children" type="number" value="' + cfg.children + '">') + '</div>' +
     '<div class="check"><input type="checkbox" id="bd" name="basedir" value="1"' + (cfg.basedir ? ' checked' : '') + '><label for="bd">Restrict PHP to this site\'s folder (open_basedir) - recommended</label></div><button>Save PHP settings</button></form></div>';
@@ -211,7 +225,9 @@ app.get('/sites/manage', auth, async (req, res) => {
     '<form method="post" action="/sites/keys" data-nolock>' + csrf(req) + '<input type="hidden" name="domain" value="' + esc(dom) + '">' + field('Authorized SSH public keys (one per line)', '<textarea name="keys" rows="3" class="mono" placeholder="ssh-ed25519 AAAA... me@laptop">' + esc(keys) + '</textarea>', 'Keys let you use SFTP without a password. Works even when password login is disabled in Settings.') + '<button class="g">Save keys</button></form></div>';
   const danger = '<div class="card"><h2>Delete website</h2><p class="muted">Removes the site, its Linux user, PHP pool, nginx config and certificate. A final backup is taken first unless you skip it.</p>' +
     '<form class="row" method="post" action="/sites/delete" data-typeconfirm="' + esc(dom) + '">' + csrf(req) + '<input type="hidden" name="domain" value="' + esc(dom) + '"><input type="hidden" name="confirm" value=""><div class="check"><input type="checkbox" id="sk" name="skipBackup" value="1"><label for="sk">Skip the final backup</label></div><button class="d">Delete ' + esc(dom) + '</button></form></div>';
-  page(req, res, dom, dnsHtml + '<p><a href="/sites">&larr; All websites</a></p><div class="grid two">' + overview + ssl + phpCard + sftp + '</div>' + danger);
+  const appRows = (s.apps || []).map((a) => '<li><b>' + esc(a.name) + '</b>' + (a.version ? ' ' + esc(a.version) : '') + ' &middot; ' + (a.url ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener">' + esc(a.url) + '</a>' : esc(a.path || '/')) + (a.adminUrl ? ' &middot; <a href="' + esc(a.adminUrl) + '" target="_blank" rel="noopener">Admin</a>' : '') + (a.db ? ' &middot; database <span class="mono">' + esc(a.db) + '</span>' : '') + '</li>').join('');
+  const appsCard = '<div class="card"><h2>Applications</h2>' + (appRows ? '<ul class="plain">' + appRows + '</ul>' : '<p class="muted">Nothing was installed here with the App Installer.</p>') + '<div class="row-acts"><a class="btn g s" href="/apps?' + q({ site: dom }) + '">Open the App Installer</a></div></div>';
+  page(req, res, dom, dnsHtml + '<p><a href="/sites">&larr; All websites</a></p><div class="grid two">' + overview + ssl + appsCard + phpCard + sftp + '</div>' + danger);
 });
 
 /* logs */
@@ -263,11 +279,11 @@ app.get('/backups/download', auth, (req, res) => {
 
 /* ================= file manager ================= */
 const filesUrl = (dom, p) => '/files?' + q({ site: dom, p });
-app.get('/files', auth, (req, res) => {
+app.get('/files', auth, async (req, res) => {
   const d = load(), dom = String(req.query.site || '');
   if (!dom) return page(req, res, 'File Manager', '<div class="grid">' + (d.sites.map((s) => '<a class="card" href="' + filesUrl(s.domain, '/public_html') + '"><small>Open files</small><div class="big">' + esc(s.domain) + '</div></a>').join('') || '<div class="card empty">No websites yet.</div>') + '</div>');
   let s, rel = normRel(req.query.p), items;
-  try { s = S.getSite(d, dom); items = JSON.parse(fm(s, 'ls', rel)); } catch (e) { req.session.flash = { t: 'err', m: errMsg(e) }; return res.redirect(s && rel !== '/' ? filesUrl(dom, '/') : '/files'); }
+  try { s = S.getSite(d, dom); items = JSON.parse(await fm(s, 'ls', rel)); } catch (e) { req.session.flash = { t: 'err', m: errMsg(e) }; return res.redirect(s && rel !== '/' ? filesUrl(dom, '/') : '/files'); }
   items.sort((a, b) => ((a.t === 'd') !== (b.t === 'd') ? (a.t === 'd' ? -1 : 1) : a.n.toLowerCase().localeCompare(b.n.toLowerCase())));
   const parts = rel.split('/').filter(Boolean);
   const crumbs = '<a href="' + filesUrl(dom, '/') + '">home</a>' + parts.map((x, i) => '<span>/</span><a href="' + filesUrl(dom, '/' + parts.slice(0, i + 1).join('/')) + '">' + esc(x) + '</a>').join('');
@@ -290,10 +306,10 @@ app.get('/files', auth, (req, res) => {
     table(['Name', 'Size', 'Modified (UTC)', 'Mode', 'Actions'], rows, 'Empty folder'));
 });
 const fback = (req) => filesUrl(String(req.body.site), normRel(req.body.p));
-const fop = (op, extra) => wrap((req) => {
+const fop = (op, extra) => awrap(async (req) => {
   const s = S.getSite(load(), String(req.body.site)), dir = normRel(req.body.p), name = okName(req.body.name), target = path.posix.join(dir, name);
-  if (op === 'rename') { fm(s, 'rename', target, path.posix.join(dir, okName(req.body.to))); return 'Renamed'; }
-  fm(s, op, target, extra ? extra(req) : ''); return op + ' done';
+  if (op === 'rename') { await fm(s, 'rename', target, path.posix.join(dir, okName(req.body.to))); return 'Renamed'; }
+  await fm(s, op, target, extra ? extra(req) : ''); return op + ' done';
 }, fback, 'FILE_OP');
 app.post('/files/mkdir', auth, fop('mkdir'));
 app.post('/files/touch', auth, fop('touch'));
@@ -301,22 +317,22 @@ app.post('/files/rename', auth, fop('rename'));
 app.post('/files/delete', auth, fop('rm'));
 app.post('/files/unzip', auth, fop('unzip'));
 app.post('/files/chmod', auth, fop('chmod', (req) => String(req.body.mode || '').trim()));
-app.get('/files/edit', auth, (req, res) => {
+app.get('/files/edit', auth, async (req, res) => {
   const dom = String(req.query.site || ''), rel = normRel(req.query.p);
   try {
-    const s = S.getSite(load(), dom), text = JSON.parse(fm(s, 'read', rel)).c;
+    const s = S.getSite(load(), dom), text = JSON.parse(await fm(s, 'read', rel)).c;
     page(req, res, 'Edit: ' + path.posix.basename(rel), '<div class="crumbs mono">' + esc(dom + rel) + '</div><form method="post" action="/files/save" data-nolock>' + csrf(req) + '<input type="hidden" name="site" value="' + esc(dom) + '"><input type="hidden" name="p" value="' + esc(rel) + '">' +
       '<textarea class="ed" name="content" spellcheck="false" wrap="off">' + esc(text) + '</textarea><p><button>Save file</button> <a class="btn g" href="' + filesUrl(dom, path.posix.dirname(rel)) + '">Back to folder</a></p></form>');
   } catch (e) { req.session.flash = { t: 'err', m: errMsg(e) }; res.redirect(filesUrl(dom, path.posix.dirname(rel))); }
 });
-app.post('/files/save', auth, wrap((req) => {
+app.post('/files/save', auth, awrap(async (req) => {
   const s = S.getSite(load(), String(req.body.site)), rel = normRel(req.body.p), text = String(req.body.content || '').replace(/\r\n/g, '\n');
   if (Buffer.byteLength(text) > 1048576) throw new Error('File too large (max 1 MB)');
-  fm(s, 'put', rel, tmpName(), text); return 'Saved ' + rel;
+  await fm(s, 'put', rel, tmpName(), text); return 'Saved ' + rel;
 }, (req) => '/files/edit?' + q({ site: String(req.body.site), p: normRel(req.body.p) }), 'FILE_SAVE'));
-app.get('/files/download', auth, (req, res) => {
+app.get('/files/download', auth, async (req, res) => {
   try {
-    const s = S.getSite(load(), String(req.query.site || '')), rel = normRel(req.query.p), st = JSON.parse(fm(s, 'stat', rel));
+    const s = S.getSite(load(), String(req.query.site || '')), rel = normRel(req.query.p), st = JSON.parse(await fm(s, 'stat', rel));
     if (st.t !== 'f') throw new Error('Not a file');
     const fname = path.posix.basename(rel).replace(/[\r\n"]/g, '_');
     res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': st.s, 'Content-Disposition': 'attachment; filename="' + fname.replace(/[^\x20-\x7e]/g, '_') + '"; filename*=UTF-8\'\'' + encodeURIComponent(fname), 'Content-Security-Policy': 'sandbox' });
@@ -330,12 +346,13 @@ app.put('/files/upload', auth, (req, res) => {
   let s, target;
   try { s = S.getSite(load(), String(req.query.site || '')); target = path.posix.join(normRel(req.query.p), okName(req.query.name)); } catch (e) { req.resume(); return res.status(400).json({ error: errMsg(e) }); }
   if (parseInt(req.headers['content-length'] || '0', 10) > MAX_UPLOAD) { req.resume(); return res.status(413).json({ error: 'File too large (max 1 GB)' }); }
+  try { sys.requireDisk(s.home, 95, 'the upload'); } catch (e) { req.resume(); return res.status(507).json({ error: errMsg(e) }); }
   const tmp = tmpName(), tmpRel = path.posix.join(path.posix.dirname(target), tmp);
   const child = spawn(process.execPath, [WORKER, 'put', s.home, target, tmp], Object.assign({ stdio: ['pipe', 'pipe', 'pipe'] }, fmOpts(s)));
   let err = '', bytes = 0, done = false;
   child.stderr.on('data', (x) => { err += x; });
   child.stdin.on('error', () => {});
-  const cleanup = () => { try { fm(s, 'rm', tmpRel); } catch (e) {} };
+  const cleanup = () => { fm(s, 'rm', tmpRel).catch(() => {}); };
   const abort = (code, msg) => { if (done) return; done = true; try { req.unpipe(child.stdin); child.kill('SIGKILL'); } catch (e) {} try { res.status(code).json({ error: msg }); } catch (e) {} setTimeout(cleanup, 300); };
   req.on('data', (x) => { bytes += x.length; if (bytes > MAX_UPLOAD) abort(413, 'File too large (max 1 GB)'); });
   req.on('aborted', () => abort(499, 'Upload aborted'));
@@ -360,12 +377,31 @@ app.get('/cron', auth, (req, res) => {
 app.post('/cron/save', auth, wrap((req) => S.saveCron(String(req.body.domain), req.body.content), (req) => '/cron?' + q({ site: String(req.body.domain) }), 'CRON_SAVE'));
 
 /* ================= updates ================= */
+function releaseHtml(req) {
+  let body;
+  if (!updater) body = '<p class="muted">The release updater is not available on this install.</p>';
+  else {
+    const last = updater.getLast(), lr = updater.lastResult();
+    const lines = [];
+    lines.push('<p>Installed: <b>v' + esc(VERSION) + '</b> &middot; Source: <span class="mono">github.com/therealkiranda/hostpanel</span> (signed releases only)</p>');
+    if (!updater.hasKey()) lines.push('<p>' + badge('No signing key', 'warn') + ' <span class="muted">This install has no <span class="mono">lib/release-key.pub</span>, so it can look for new releases but will never install one.</span></p>');
+    if (!last) lines.push('<p class="muted">Not checked yet.</p>');
+    else if (last.error && !last.newer) lines.push('<p>' + badge('Check failed', 'err') + ' ' + esc(last.error) + '</p>');
+    else if (last.newer) lines.push('<p>' + badge('v' + last.latest + ' available', last.verified ? 'ok' : 'warn') + ' ' + (last.verified ? 'Signature verified.' : esc(last.error || 'Not verified - it will not be installed.')) + '</p>');
+    else lines.push('<p>' + badge('Up to date', 'ok') + ' <span class="muted">checked ' + esc(new Date(last.checkedAt).toISOString().slice(0, 16).replace('T', ' ')) + ' UTC</span></p>');
+    if (lr) lines.push('<p class="muted">Last update attempt: <b>' + esc(lr.status) + '</b> (v' + esc(lr.version) + ', ' + esc(lr.time) + ')' + (lr.status === 'rolled-back' ? ' - the new version did not start, so the previous one was restored.' : '') + '</p>');
+    let acts = fbtn(req, '/updates/release/check', {}, 'Check GitHub for a new version', 'g');
+    if (last && last.newer && last.verified && updater.hasKey()) acts += fbtn(req, '/updates/release/apply', { version: last.latest }, 'Install v' + esc(last.latest), '', 'data-confirm="Install HostPanel v' + esc(last.latest) + ' now? The panel restarts, and rolls back by itself if the new version does not start. Websites keep running."');
+    body = lines.join('') + '<div class="row-acts">' + acts + '</div>';
+  }
+  return '<div class="card section"><h2>HostPanel release</h2>' + body + '</div>';
+}
 app.get('/updates', auth, (req, res) => {
-  const up = sys.pendingUpdates(), last = sys.lastAptUpdate(), reboot = fs.existsSync('/var/run/reboot-required'), auto = sys.autoUpdatesOn();
-  page(req, res, 'Updates', '<div class="grid">' + stat('Pending updates', up.count + ' (' + up.security + ' security)', up.count ? 'warn' : 'on') + stat('Package lists refreshed', last ? fmtDate(last) + ' UTC' : 'unknown') +
+  const releaseCard = releaseHtml(req), up = sys.pendingUpdates(), last = sys.lastAptUpdate(), reboot = fs.existsSync('/var/run/reboot-required'), auto = sys.autoUpdatesOn();
+  page(req, res, 'Updates', releaseCard + '<div class="grid">' + stat('Pending updates', up.count + ' (' + up.security + ' security)', up.count ? 'warn' : 'on') + stat('Package lists refreshed', last ? fmtDate(last) + ' UTC' : 'unknown') +
     stat('Auto security updates', auto ? 'ON' : 'OFF', auto ? 'on' : 'off') + stat('Reboot required', reboot ? 'YES' : 'No', reboot ? 'warn' : 'on') + '</div>' +
     '<div class="card section"><div class="row-acts">' + fbtn(req, '/updates/refresh', {}, 'Check for updates', 'g') + fbtn(req, '/updates/install', {}, 'Install all updates', '', 'data-confirm="Install all pending updates now?"') +
-    fbtn(req, '/updates/panel', {}, 'Update panel packages', 'g', 'data-confirm="Update the panel\'s npm packages and restart the panel?"') + fbtn(req, '/updates/auto', { on: auto ? '0' : '1' }, auto ? 'Disable auto updates' : 'Enable auto updates', 'g') +
+    fbtn(req, '/updates/auto', { on: auto ? '0' : '1' }, auto ? 'Disable auto updates' : 'Enable auto updates', 'g') +
     (reboot ? fbtn(req, '/updates/reboot', {}, 'Reboot server', 'd', 'data-confirm="Reboot the server now? Websites will be down for about a minute."') : '') + '</div></div>' +
     '<div class="sec-h"><h2>Pending packages</h2></div><pre class="log">' + esc(up.list.join('\n') || 'Everything is up to date.') + '</pre>');
 });
@@ -374,10 +410,19 @@ app.post('/updates/install', auth, wrap(() => {
   c.runSteps('Install system updates', [['apt-get', ['update']], ['apt-get', ['-y', '-o', 'Dpkg::Options::=--force-confold', 'upgrade']], ['apt-get', ['-y', 'autoremove']]], () => { sys.invalidateUpdates(); sys.clearSecCache(); });
   return 'Update started - see Tasks page';
 }, '/tasks', 'UPD_INSTALL'));
-app.post('/updates/panel', auth, wrap(() => {
-  c.runSteps('Update panel packages', [['npm', ['update', '--omit=dev', '--no-audit', '--no-fund', '--prefix', BASE]]], () => setTimeout(() => { try { sh('systemctl', ['restart', 'hostpanel']); } catch (e) {} }, 1500));
-  return 'Started - the panel restarts when finished';
-}, '/tasks', 'UPD_PANEL'));
+app.post('/updates/release/check', auth, awrap(async () => {
+  if (!updater) throw new Error('The release updater is not available on this install');
+  const r = await updater.check();
+  if (r.error && !r.newer) throw new Error(r.error);
+  return r.newer ? 'Version ' + r.latest + ' is available' + (r.verified ? ' (signature verified)' : '') : 'HostPanel is up to date (v' + VERSION + ')';
+}, '/updates', 'UPD_RELEASE_CHECK'));
+app.post('/updates/release/apply', auth, wrap((req) => {
+  if (!updater) throw new Error('The release updater is not available on this install');
+  const last = updater.getLast();
+  if (!last || last.latest !== String(req.body.version) || !last.verified) throw new Error('Check for updates first, then install the verified release');
+  updater.startUpdate(c.runAsync);
+  return 'Update started - see Tasks page. The panel restarts when it is done.';
+}, '/tasks', 'UPD_RELEASE'));
 app.post('/updates/auto', auth, wrap((req) => { sys.setAutoUpdates(req.body.on === '1'); sys.clearSecCache(); return 'Automatic security updates ' + (req.body.on === '1' ? 'enabled' : 'disabled'); }, '/updates', 'UPD_AUTO'));
 app.post('/updates/reboot', auth, wrap(() => { setTimeout(() => { try { sh('systemctl', ['reboot']); } catch (e) {} }, 1500); return 'Rebooting... reload this page in about a minute.'; }, '/updates', 'REBOOT'));
 
@@ -439,44 +484,20 @@ app.post('/settings/email', auth, wrap((req) => { const e = String(req.body.emai
 app.post('/settings/php-policy', auth, wrap((req) => S.setPhpPolicy(String(req.body.policy)), '/settings', 'PHP_POLICY'));
 app.post('/settings/sftp', auth, wrap((req) => S.setSftpPassword(req.body.on === '1'), '/settings', 'SFTP_POLICY'));
 
-/* ================= account ================= */
-app.get('/account', auth, (req, res) => {
-  const d = load(); let tf;
-  if (d.admin.totp) tf = '<p>' + badge('2FA is enabled', 'ok') + '</p><form class="row" method="post" action="/account/2fa/disable">' + csrf(req) + '<input name="pass" type="password" placeholder="Password" required><input name="code" placeholder="2FA code" required><button class="d">Disable 2FA</button></form>';
-  else if (req.session.pendingTotp) {
-    tf = '<p>Add this key to an authenticator app (Google Authenticator, Aegis, Authy...):</p><pre class="log" id="tk">' + esc(req.session.pendingTotp) + '</pre><p class="muted mono">otpauth://totp/HostPanel:' + esc(d.admin.user) + '?secret=' + esc(req.session.pendingTotp) + '&amp;issuer=HostPanel</p>' +
-      '<form class="row" method="post" action="/account/2fa/enable">' + csrf(req) + '<input name="code" placeholder="6-digit code" inputmode="numeric" required><button>Confirm &amp; enable</button></form>';
-  } else tf = '<p class="muted">Adds a one-time code to every login. Strongly recommended.</p>' + fbtn(req, '/account/2fa/start', {}, 'Enable 2FA', '');
-  page(req, res, 'Account', (d.admin.mustChange ? '<div class="flash err">You must change the default password before using the panel.</div>' : '') + '<div class="grid two"><div class="card"><h2>Change password</h2><form method="post" action="/account" data-nolock>' + csrf(req) +
-    field('Current password', '<input name="cur" type="password" autocomplete="current-password" required>') + field('New password', '<input name="nw" type="password" autocomplete="new-password" minlength="12" required>', 'At least 12 characters.') + '<button>Update password</button></form></div>' +
-    '<div class="card"><h2>Two-factor authentication</h2>' + tf + '</div></div>');
-});
-app.post('/account', auth, wrap((req) => {
-  const d = load();
-  if (!bcrypt.compareSync(String(req.body.cur || ''), d.admin.hash)) throw new Error('Current password is wrong');
-  const nw = String(req.body.nw || '');
-  if (nw.length < 12 || nw.length > 200) throw new Error('New password must be 12-200 characters');
-  d.admin.hash = bcrypt.hashSync(nw, 12); d.admin.mustChange = false; save(d);
-  try { fs.unlinkSync(P.CRED_FILE); } catch (e) {}
-  sys.clearSecCache(); return 'Password updated';
-}, '/account', 'PASSWORD'));
-app.post('/account/2fa/start', auth, (req, res) => { req.session.pendingTotp = c.b32enc(crypto.randomBytes(20)); res.redirect('/account'); });
-app.post('/account/2fa/enable', auth, wrap((req) => {
-  const sec = req.session.pendingTotp;
-  if (!sec || !c.totpCheck(sec, req.body.code, null)) throw new Error('Wrong code');
-  const d = load(); d.admin.totp = sec; d.admin.totpLast = Math.floor(Date.now() / 30000); save(d); delete req.session.pendingTotp; sys.clearSecCache(); return '2FA enabled';
-}, '/account', '2FA_ENABLE'));
-app.post('/account/2fa/disable', auth, wrap((req) => {
-  const d = load();
-  if (!bcrypt.compareSync(String(req.body.pass || ''), d.admin.hash) || !c.totpCheck(d.admin.totp, req.body.code, d)) throw new Error('Wrong password or code');
-  d.admin.totp = null; save(d); sys.clearSecCache(); return '2FA disabled';
-}, '/account', '2FA_DISABLE'));
+/* ================= app installer (WordPress, Laravel, ...) ================= */
+const apps = createApps({ S, c, sys, exec: siteexec });
+require('./lib/routes/apps')({ app, auth, page, csrf, esc, badge, field, sel, table, q, c, load, audit, apps, sys });
+
+/* ================= account routes (extracted module) ================= */
+require('./lib/routes/account')({ app, auth, page, csrf, esc, badge, fbtn, field, rand, c, sys, load, save, bcrypt, wrap, audit });
 
 /* ================= fallbacks ================= */
 app.use((req, res) => { if (!req.session.user) return res.status(404).send('Not found'); res.status(404); page(req, res, 'Not found', '<div class="card empty"><h2>404</h2><p>That page does not exist.</p><a class="btn" href="/">Back to dashboard</a></div>'); });
 app.use((err, req, res, next) => { res.status(err && err.status >= 400 && err.status < 500 ? err.status : 500).send('Request error'); });
 
 /* ================= schedulers + start ================= */
+// async route handlers must never be able to take the whole panel down
+process.on('unhandledRejection', (e) => { try { c.auditSys('UNHANDLED_REJECTION', errMsg(e)); } catch (x) {} });
 if (IS_ROOT) { c.every(60000, S.scheduledBackup); c.every(300000, S.autoSslTick); }
 const server = https.createServer({ key: fs.readFileSync(P.DATA + '/panel.key'), cert: fs.readFileSync(P.DATA + '/panel.crt'), minVersion: 'TLSv1.2' }, app);
 server.requestTimeout = 30 * 60 * 1000; server.headersTimeout = 30000;

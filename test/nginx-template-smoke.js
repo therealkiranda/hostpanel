@@ -1,0 +1,12 @@
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const template = fs.readFileSync(path.join(__dirname, '..', 'lib', 'tpl', 'site-static.tpl'), 'utf8');
+const config = template.replace(/\{\{DOCROOT\}\}/g, '/home/w1234567890/public_html');
+assert(config.includes('root /home/w1234567890/public_html;'));
+assert(config.includes('index index.html index.htm;'));
+assert(config.includes('try_files $uri $uri/ =404;'));
+assert(!config.includes('fastcgi_pass'));
+assert(!config.includes('php-fpm'));
+console.log('Static Nginx vhost template smoke test passed.');

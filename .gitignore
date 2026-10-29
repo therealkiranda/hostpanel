@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+/hostpanel.zip
+*.log
+.DS_Store
+# Runtime state and generated secrets must never be committed.
+data/
+backups/
+*.pem
+*.key
+hostpanel-credentials.txt
+dist/

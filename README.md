@@ -1,4 +1,4 @@
-# 🚀 HostPanel 1.0
+# 🚀 HostPanel 1.0.2
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -21,6 +21,7 @@ HostPanel gives you absolute control over your web server without the bloat of t
 - 🔒 **Automated SSL:** Free, auto-renewing Let's Encrypt SSL certificates for every hosted site.
 - 🎯 **Custom Panel Domain:** Run your control panel securely under `https://panel.yourdomain.com` with valid certificates alongside standard direct port access (`IP:8443`).
 - 📁 **File & Site Management:** Built-in web File Manager, 1GB upload limit, embedded code editor, and SFTP-only isolated site users (strictly no shell access).
+- 🧩 **App Installer:** one-click WordPress (and Laravel) on a new or existing site — website, database, configuration and first admin created for you.
 - 💾 **Backups & Recovery:** Scheduled or manual backups, easy multi-point restores, and off-server destination sync powered by `rclone`.
 - 🛡️ **Hardened Security:** Security score analysis, Fail2ban integration, UFW status monitoring, 2FA authentication, activity audit logging, and automated updates.
 
@@ -84,6 +85,45 @@ Bind your administrative dashboard to your own domain name (e.g., `panel.yourdom
 2. **Enable Domain:** Inside HostPanel, navigate to **Settings → Panel domain**. Enter `panel.yourdomain.com` and your contact email, then click **Enable panel domain**.
 3. **Verify:** Monitor the **Tasks** window. Once complete, visit `https://panel.yourdomain.com` to confirm valid Let's Encrypt SSL termination.
 4. *(Optional)* **Restrict Direct Access:** Go to **Settings → Direct access on port 8443** to restrict raw port access to specific IPs while keeping domain routing open.
+
+---
+
+## 🧩 App Installer (WordPress, Laravel)
+
+Open **App Installer** in the left menu, pick an application and fill the short form:
+
+- **Install on:** a brand-new website (enter the domain; HostPanel creates the site, PHP pool, nginx config and SFTP user) or an existing one.
+- **Folder:** optional sub-folder such as `blog` (WordPress). Empty = site root.
+- **HTTPS:** tick it to use `https://` URLs and have a free Let's Encrypt certificate requested automatically a few minutes after the install (DNS must already point to the server).
+- WordPress asks for site title, administrator username/email/password (a strong password is pre-generated — copy it, it is not stored) and language.
+
+Progress and the final login URLs appear on the **Tasks** page. Installed apps are listed on the App Installer page and on each website's page.
+
+What it does for you: creates a dedicated database and user (random name and password), downloads the application, writes the configuration (`wp-config.php` / `.env`, mode 600), runs the installation, and records the result. Everything application-related runs **as the website's own Linux user**, never as root.
+
+Safety rules: it never overwrites files (the target folder must be empty — only HostPanel's "site is ready" page is replaced); input is validated before anything is created; if any step fails, the database and files created by *that attempt* are removed and the placeholder page is restored, so you can simply retry. Uninstalling is not automated yet: delete the files in the File Manager and the database on the Databases page.
+
+WordPress uses [WP-CLI](https://wp-cli.org) (downloaded once to `/opt/hostpanel/bin`, checked against a SHA-256 pinned in `lib/apps/wpcli.js`; WP-CLI itself verifies the WordPress.org checksum). Laravel uses Composer. Laravel is marked **Beta**.
+
+### Adding another application
+Add an entry to `lib/apps/catalog.js` and a handler module exporting `validate(input)`, `install({ x, site, target, db, host, log })` and `fields(env)` (copy `lib/apps/wordpress.js`). Use only the `host` adapters (`php`, `writeFile`, `readFile`, `ensureTool`, ...) so the engine can roll back and tests can fake the machine. Cover it in `test/apps-handlers.js`.
+
+---
+
+## 🔑 SSH login banner
+
+The installer adds `/etc/update-motd.d/00-hostpanel`, which Ubuntu shows on **every interactive SSH login** (password or key; `scp`/`sftp`/`ssh host command` stay clean):
+
+```text
+########################################################
+###               Welcome to Hostpanel               ###
+########################################################
+
+* Website:         https://www.khadkakiran.com.np
+* Documentation:   coming soon
+```
+
+Edit `/etc/hostpanel/motd` to change the text (upgrades never overwrite it). The standard Ubuntu greeting is left in place; `sudo hostpanel-cli motd quiet` hides its noisy parts (help text, news, ESM ads) and `sudo hostpanel-cli motd default` restores them. Update-available and reboot-required notices are never hidden. Remove the banner with `sudo hostpanel-cli motd remove`.
 
 ---
 
@@ -192,3 +232,11 @@ sudo bash install.sh
 ## 🧪 Testing & Verification Note
 
 This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
+
+## Version 1.0.2 development notes
+
+- The administrator username can be changed from **Account** after re-authentication; when 2FA is enabled, a fresh 2FA code is required.
+- Static HTML sites are supported without creating a PHP-FPM pool.
+- This release does **not** yet enable customer multi-tenancy or a privileged-helper boundary. The current root-run server still has a large privileged attack surface. Do not expose customer accounts or treat this development build as a production-ready shared-hosting service.
+- Panel self-updates must be implemented with signed/checksummed release artifacts, staging, backups, health checks and rollback. A raw `git pull` from the running panel is intentionally not used.
+- The App Installer (WordPress, Laravel) is available (see above). Full tenant isolation is still unfinished work. The installer's network steps (WP-CLI download, WordPress.org, Packagist) and a real MariaDB/PHP-FPM install should be validated on a test VPS snapshot before production use.
