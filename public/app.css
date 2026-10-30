@@ -1,4 +1,4 @@
-/* HostPanel 1.0.2 - "Aurora" theme. Dark by default, light on request. No inline styles are needed (strict CSP). */
+/* HostPanel 1.0.3 - "Aurora" theme. Dark by default, light on request. No inline styles are needed (strict CSP). */
 :root {
   --bg: #0a0e1f; --bg2: #0f1530; --surface: #141b38; --surface2: #1a2347; --border: #26305c; --hover: #1e2852;
   --text: #e8ebfa; --muted: #8e9ac6; --faint: #5d6896;
@@ -143,3 +143,31 @@ a.card.appcard { display: flex; gap: 14px; align-items: flex-start; }
 .appicon { flex: none; width: 44px; height: 44px; border-radius: 12px; background: var(--grad); color: #fff; font-weight: 700; font-size: 1.2rem; display: grid; place-items: center; box-shadow: 0 6px 16px rgba(99,102,241,.3); }
 .appcard small { display: block; margin: 2px 0 6px; } .appcard p { margin: 0; color: var(--muted); font-size: .88rem; }
 ul.plain { list-style: none; margin: 0 0 10px; padding: 0; } ul.plain li { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: .9rem; } ul.plain li:last-child { border-bottom: 0; }
+
+/* ---- Branded dialogs (replace native confirm/prompt/alert) ---- */
+.dlg-ov { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 18px; background: rgba(5,8,22,.62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); opacity: 0; transition: opacity .16s ease; }
+.dlg-ov.in { opacity: 1; }
+body.dlg-open { overflow: hidden; }
+.dlg { width: 100%; max-width: 440px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 24px 24px 20px; box-shadow: var(--shadow), 0 0 70px rgba(124,92,255,.18); transform: translateY(10px) scale(.97); transition: transform .18s cubic-bezier(.2,.9,.3,1.2); position: relative; overflow: hidden; }
+.dlg::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--grad); }
+.dlg-danger::before { background: linear-gradient(90deg, #fb7185, #f59e0b); }
+.dlg-ov.in .dlg { transform: none; }
+.dlg-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.dlg-title { margin: 0; font-size: 1.1rem; color: var(--text); text-transform: none; letter-spacing: -.01em; font-weight: 700; }
+.dlg-ico { flex: none; width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; font-weight: 800; color: #fff; background: var(--grad); }
+.dlg-danger .dlg-ico { background: linear-gradient(135deg, #fb7185, #e11d48); }
+.dlg-warn .dlg-ico { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+.dlg-msg { color: var(--muted); white-space: pre-wrap; word-break: break-word; margin-bottom: 14px; }
+.dlg-field { margin-bottom: 16px; }
+.dlg-field label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
+.dlg-match { display: block; padding: 9px 12px; margin-bottom: 10px; border-radius: 10px; font-family: var(--mono); font-size: .9rem; background: var(--err-bg); color: var(--err); border: 1px dashed color-mix(in srgb, var(--err) 45%, transparent); word-break: break-all; user-select: all; }
+.dlg-field input { width: 100%; }
+.dlg-okmatch .dlg-field input { border-color: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
+.dlg-foot { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.dlg-foot button { min-width: 96px; }
+button.dlg-danger { background: linear-gradient(135deg, #fb7185, #e11d48); color: #fff; border: 0; }
+button.dlg-danger:disabled { filter: grayscale(.6); }
+.dlg-shake { animation: dlgshake .28s; }
+@keyframes dlgshake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+@media (max-width: 480px) { .dlg-foot button { flex: 1; } }
+@media (prefers-reduced-motion: reduce) { .dlg-ov, .dlg { transition: none; } .dlg-shake { animation: none; } }

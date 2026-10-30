@@ -121,11 +121,11 @@ const sh = (f) => fs.readdirSync(f).sort();
   let release; const gate = new Promise((r) => { release = r; }); c.runAsync('busy', async () => { await gate; });
   await assert.rejects(() => apps2.start(form({ target: '__new__', domain: 'new.example.org' })), /Another task is running/); assert.equal(created.length, 0, 'no website created while another task runs'); release(); await wait();
   msg = await apps2.start(form({ target: '__new__', domain: 'WWW.New.Example.org', php: '8.3' })); assert.match(msg, /secret-sftp/); assert.match(msg, /installation started/);
-  assert.deepEqual([created[0][0].domain, created[0][0].type, created[0][0].autoSsl, created[0][1]], ['new.example.org', 'php', '1', { deferSsl: true }]);
+  assert.deepEqual([created[0][0].domain, created[0][0].type, created[0][0].autoSsl], ['new.example.org', 'php', undefined], 'no automatic Let\'s Encrypt');
   j = await wait(); assert.ok(j.code === 0 || /not empty/.test(j.log), j.log);
 
-  /* ---- existing site + https: auto-SSL is switched on so the certificate follows automatically ---- */
-  resetSite(); await apps.start(form()); await wait(); assert.equal(c.load().sites[0].autoSsl, true);
+  /* ---- existing site + https: nothing is requested or scheduled; the certificate is issued by hand from the SSL section ---- */
+  resetSite(); await apps.start(form()); j = await wait(); assert.ok(!c.load().sites[0].autoSsl, 'https never switches auto-SSL on'); assert.match(j.log, /Issue certificate/);
   resetSite(); await apps.start(form({ https: '' })); await wait(); assert.equal(c.load().sites[0].autoSsl, false); assert.equal(c.load().sites[0].apps[0].url, 'http://example.com/');
 
   /* ---- Laravel: a fresh laravel site keeps its placeholder in public/; fake composer + artisan mimic the real tools ---- */

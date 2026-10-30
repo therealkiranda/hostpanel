@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HostPanel 1.0.2 installer - Ubuntu 22.04 / 24.04 / 26.04.
+# HostPanel 1.0.3 installer - Ubuntu 22.04 / 24.04 / 26.04.
 # Run from the unzipped folder:  sudo bash install.sh
 # Safe to run again: it upgrades the panel and keeps your data, sites and databases.
 set -euo pipefail
@@ -148,7 +148,7 @@ CFG
 systemctl enable fail2ban && systemctl restart fail2ban
 
 step "Firewall"
-SSHP=$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}'); SSHP=${SSHP:-22}
+SSHP=$(sshd -T 2>/dev/null | awk '/^port /{p=$2} END{print p}' || true); SSHP=${SSHP:-22}
 ufw limit "${SSHP}/tcp" >/dev/null
 ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null

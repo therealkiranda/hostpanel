@@ -1,4 +1,4 @@
-# 🚀 HostPanel 1.0.2
+# 🚀 HostPanel 1.0.3
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -233,10 +233,15 @@ sudo bash install.sh
 
 This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
 
-## Version 1.0.2 development notes
+## Version 1.0.3 development notes
 
 - The administrator username can be changed from **Account** after re-authentication; when 2FA is enabled, a fresh 2FA code is required.
 - Static HTML sites are supported without creating a PHP-FPM pool.
 - This release does **not** yet enable customer multi-tenancy or a privileged-helper boundary. The current root-run server still has a large privileged attack surface. Do not expose customer accounts or treat this development build as a production-ready shared-hosting service.
 - Panel self-updates must be implemented with signed/checksummed release artifacts, staging, backups, health checks and rollback. A raw `git pull` from the running panel is intentionally not used.
 - The App Installer (WordPress, Laravel) is available (see above). Full tenant isolation is still unfinished work. The installer's network steps (WP-CLI download, WordPress.org, Packagist) and a real MariaDB/PHP-FPM install should be validated on a test VPS snapshot before production use.
+
+### 1.0.3 changes
+- **Let's Encrypt is manual** (like CloudPanel): new websites and App Installer sites no longer request a certificate. Open *Manage -> SSL certificate* and press *Issue certificate* when the DNS points to the server. New sites answer on port 443 with the shared self-signed certificate until then, so Cloudflare "Full" and direct https:// visits no longer fail with 525 / QUIC errors.
+- **Branded dialogs**: confirm / type-to-confirm / prompt / upload-error pop-ups are now HostPanel-styled modals (keyboard accessible, light and dark) instead of browser pop-ups.
+- Release workflow runs scripts through `bash`; `install.sh` firewall step no longer stops under `pipefail`.

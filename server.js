@@ -1,5 +1,5 @@
 'use strict';
-// HostPanel 1.0.2 - web server and pages.
+// HostPanel 1.0.3 - web server and pages.
 const express = require('express');
 const session = require('express-session');
 const https = require('https');
@@ -183,8 +183,7 @@ app.get('/sites', auth, (req, res) => {
     field('Type', sel('type', [['php', 'PHP website'], ['laravel', 'Laravel (public/ folder)'], ['static', 'Static HTML'], ['proxy', 'Reverse proxy (Node, Python, ...)']], 'php')) +
     field('PHP version', sel('php', php.map((v) => [v, 'PHP ' + v]), php[php.length - 1])) +
     field('Proxy port', '<input name="port" type="number" min="1024" max="65535" placeholder="3000">', 'Only for the proxy type') +
-    field('Let\'s Encrypt email', '<input name="email" type="email" value="' + esc(d.email) + '" placeholder="you@example.com">') + '</div>' +
-    '<div class="check"><input type="checkbox" id="as" name="autoSsl" value="1" checked><label for="as">Get a free Let\'s Encrypt SSL certificate automatically (retries until DNS is ready)</label></div><button>Create website</button></form>' +
+    '</div><p class="muted">SSL: after the site is created, open <b>Manage &rarr; SSL certificate</b> and press <b>Issue certificate</b> (once the DNS points here).</p><button>Create website</button></form>' +
     '<p class="muted">Want WordPress or Laravel ready to use? Open the <a href="/apps">App Installer</a>: it creates the website, database and first login in one step.</p></div>';
   page(req, res, 'Websites', form + '<div class="sec-h"><h2>Your websites</h2></div>' + table(['Domain', 'Type', 'SSL', 'SFTP user', 'Actions'], rows, 'No websites yet. Add your first one above.'));
 });
@@ -211,7 +210,7 @@ app.get('/sites/manage', auth, async (req, res) => {
   const overview = '<div class="card"><h2>Overview</h2><dl class="kv"><dt>Domain</dt><dd><a href="http' + (s.ssl ? 's' : '') + '://' + esc(dom) + '" target="_blank" rel="noopener">' + esc(dom) + '</a></dd><dt>Type</dt><dd>' + esc(s.type === 'proxy' ? 'Reverse proxy to 127.0.0.1:' + s.port : s.type) + '</dd>' +
     (s.php ? '<dt>PHP</dt><dd>' + esc(s.php) + '</dd>' : '') + '<dt>Web root</dt><dd class="mono">' + esc((s.docroot || s.root).replace(s.home, '')) + '</dd><dt>Linux user</dt><dd class="mono">' + esc(s.user) + '</dd><dt>Created</dt><dd>' + esc(String(s.created).slice(0, 10)) + '</dd></dl>' +
     '<p></p><div class="row-acts"><a class="btn g s" href="/files?' + q({ site: dom, p: '/public_html' }) + '">File manager</a> <a class="btn g s" href="/cron?' + q({ site: dom }) + '">Cron jobs</a> <a class="btn g s" href="/logs?' + q({ site: dom, type: 'error' }) + '">Logs</a> ' + fbtn(req, '/backups/site', { domain: dom }, 'Backup now', 'g') + '</div></div>';
-  const ssl = '<div class="card"><h2>SSL certificate (Let\'s Encrypt)</h2><p>' + (s.ssl ? badge('Active' + (dd !== null ? ' - expires in ' + dd + ' days' : ''), dd !== null && dd < 14 ? 'err' : 'ok') + ' Renews automatically (certbot timer).' : badge('Not installed', 'warn') + (s.autoSsl ? ' Auto-SSL is waiting for DNS.' : '')) + '</p>' +
+  const ssl = '<div class="card"><h2>SSL certificate (Let\'s Encrypt)</h2><p>' + (s.ssl ? badge('Active' + (dd !== null ? ' - expires in ' + dd + ' days' : ''), dd !== null && dd < 14 ? 'err' : 'ok') + ' Renews automatically (certbot timer).' : badge('Not installed', 'warn') + (s.autoSsl ? ' Auto-SSL is waiting for DNS.' : ' Point the domain to this server (grey cloud if you use Cloudflare), then press Issue certificate.')) + '</p>' +
     '<form class="row" method="post" action="/sites/ssl" data-nolock>' + csrf(req) + '<input type="hidden" name="domain" value="' + esc(dom) + '"><input type="email" name="email" value="' + esc(d.email) + '" placeholder="Email for Let\'s Encrypt" required>' + (s.ssl ? '<input type="hidden" name="force" value="1">' : '') + '<button>' + (s.ssl ? 'Renew now' : 'Issue certificate') + '</button></form>' +
     '<div class="row-acts"><a class="btn g s" href="/sites/manage?' + q({ domain: dom, dns: '1' }) + '">Check DNS</a> ' + fbtn(req, '/sites/autossl', { domain: dom, on: s.autoSsl ? '0' : '1' }, s.autoSsl ? 'Stop auto-retry' : 'Auto-retry hourly', 'g') +
     (s.ssl ? ' ' + fbtn(req, '/sites/ssl/off', { domain: dom }, 'Remove SSL', 'd', 'data-confirm="Remove the certificate? The site will only work over http."') : '') + '</div></div>';
