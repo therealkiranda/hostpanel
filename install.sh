@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HostPanel 1.0.3 installer - Ubuntu 22.04 / 24.04 / 26.04.
+# HostPanel 1.0.4 installer - Ubuntu 22.04 / 24.04 / 26.04.
 # Run from the unzipped folder:  sudo bash install.sh
 # Safe to run again: it upgrades the panel and keeps your data, sites and databases.
 set -euo pipefail
@@ -31,7 +31,7 @@ apt-get update -y
 DB_PKG=""
 if ! systemctl cat mysql >/dev/null 2>&1 && ! systemctl cat mariadb >/dev/null 2>&1; then DB_PKG="mariadb-server"; fi
 apt-get install -y $DB_PKG nginx php-fpm php-cli php-mysql php-curl php-gd php-mbstring php-xml php-zip php-intl php-bcmath \
-  certbot ufw fail2ban cron curl unzip zip git openssl ca-certificates gnupg composer unattended-upgrades needrestart openssh-server dnsutils
+  certbot ufw fail2ban cron curl unzip zip git openssl ca-certificates gnupg composer unattended-upgrades needrestart openssh-server dnsutils python3 python3-venv python3-pip
 apt-get install -y rclone >/dev/null 2>&1 || echo "(rclone not available - off-server backups can be added later)"
 apt-get -y -o Dpkg::Options::=--force-confold upgrade
 
@@ -226,7 +226,7 @@ echo
 echo " Next steps:"
 echo "  1. Sign in and change the password (Account page), then enable 2FA"
 echo "  2. Settings -> Panel domain: use  panel.yourdomain.com  with a free Let's Encrypt certificate"
-echo "  3. Open ports 22, 80, 443 and $PORT in your cloud firewall / security group"
+echo "  3. Open ports 22, 80, 443, $PORT (and 8444 if you enable phpMyAdmin) in your cloud firewall / security group"
 echo " Install WordPress or Laravel in one click:  App Installer (left menu)"
 echo " Locked out or forgot the password?   sudo hostpanel-cli reset-password"
 echo "========================================================="

@@ -134,8 +134,10 @@
   // generated password helper for forms with [data-gen]
   $$('[data-gen]').forEach(function (b) {
     b.addEventListener('click', function () {
-      var a = new Uint8Array(12); crypto.getRandomValues(a);
-      var t = $(b.getAttribute('data-gen')); if (t) t.value = Array.prototype.map.call(a, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+      // 20 letters/digits (no look-alikes) - accepted by database, WordPress and client password rules
+      var cs = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789', a = new Uint8Array(40), o = '', i = 0; crypto.getRandomValues(a);
+      while (o.length < 20 && i < a.length) { if (a[i] < 232) o += cs[a[i] % cs.length]; i++; }
+      var t = $(b.getAttribute('data-gen')); if (t) t.value = o;
     });
   });
 })();

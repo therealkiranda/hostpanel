@@ -1,4 +1,4 @@
-/* HostPanel 1.0.3 - "Aurora" theme. Dark by default, light on request. No inline styles are needed (strict CSP). */
+/* HostPanel 1.0.4 - "Aurora" theme. Dark by default, light on request. No inline styles are needed (strict CSP). */
 :root {
   --bg: #0a0e1f; --bg2: #0f1530; --surface: #141b38; --surface2: #1a2347; --border: #26305c; --hover: #1e2852;
   --text: #e8ebfa; --muted: #8e9ac6; --faint: #5d6896;
@@ -171,3 +171,23 @@ button.dlg-danger:disabled { filter: grayscale(.6); }
 @keyframes dlgshake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 @media (max-width: 480px) { .dlg-foot button { flex: 1; } }
 @media (prefers-reduced-motion: reduce) { .dlg-ov, .dlg { transition: none; } .dlg-shake { animation: none; } }
+
+/* 1.0.4: new-website picker, wizards, client checkboxes */
+.center { text-align: center; margin: 6px 0 20px; }
+.tgrid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.tcard { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; text-decoration: none; color: inherit; transition: transform .12s, box-shadow .12s; }
+.tcard:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.tcard p { color: var(--muted, #8b93b7); font-size: .88rem; margin: 6px 0 0; }
+.tcard .btn { margin-top: auto; }
+.ticon { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center; font-weight: 800; font-size: 1.15rem; color: #fff; flex: none; background: linear-gradient(135deg, #7c5cff, #22c7ee); }
+.ticon.t-wordpress { background: linear-gradient(135deg, #21759b, #3aa0d1); }
+.ticon.t-laravel { background: linear-gradient(135deg, #e8412e, #ff7a59); }
+.ticon.t-node { background: linear-gradient(135deg, #3c873a, #7ac143); }
+.ticon.t-php { background: linear-gradient(135deg, #5b6bb5, #8892bf); }
+.ticon.t-static { background: linear-gradient(135deg, #e44d26, #f6a21e); }
+.ticon.t-python { background: linear-gradient(135deg, #306998, #ffd43b); }
+.ticon.t-proxy { background: linear-gradient(135deg, #0f9d8a, #3ec9b3); }
+.wiz-h { display: flex; gap: 16px; align-items: center; margin-bottom: 10px; }
+.wiz-h h2 { margin: 0; }
+.checks { display: grid; gap: 6px; margin: 8px 0 16px; }
+.card h3, .card.section h3 { margin: 18px 0 8px; font-size: 1rem; }

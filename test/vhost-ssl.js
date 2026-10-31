@@ -20,7 +20,7 @@ assert.ok(!/return 301 https/.test(conf), 'no https redirect before a real certi
 assert.equal((conf.match(/server \{/g) || []).length, 1);
 assert.ok(!/letsencrypt\/live/.test(conf));
 // the UI no longer offers or defaults to automatic SSL
-const src = fs.readFileSync(__dirname + '/../server.js', 'utf8') + fs.readFileSync(__dirname + '/../lib/routes/apps.js', 'utf8');
+const src = fs.readFileSync(__dirname + '/../server.js', 'utf8') + fs.readFileSync(__dirname + '/../lib/routes/wizard.js', 'utf8');
 assert.ok(!/name="autoSsl"/.test(src) && !/id="as"/.test(src), 'no auto-SSL checkbox');
 // no browser-native dialogs anywhere in the client script
 const js = fs.readFileSync(__dirname + '/../public/app.js', 'utf8').replace(/\/\/.*$/gm, '');

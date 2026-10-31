@@ -1,4 +1,4 @@
-# 🚀 HostPanel 1.0.3
+# 🚀 HostPanel 1.0.4
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -232,6 +232,22 @@ sudo bash install.sh
 ## 🧪 Testing & Verification Note
 
 This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
+
+## Version 1.0.4
+
+### What is new
+- **One "New website" flow.** *Websites -> New website* shows WordPress, Laravel, Node.js, PHP, Static HTML, Python and Reverse Proxy. Each one opens its own wizard. The separate *App Installer* page is gone (old `/apps` links redirect).
+- **WordPress / Laravel wizards** ask for the site details, the first administrator, and a *separate* database name, database username, database password (and WordPress table prefix). Defaults are pre-filled and can be changed.
+- **Stable releases only.** The newest stable version is looked up from WordPress.org / Packagist and pinned; Composer runs with `--stability=stable`; any beta / RC / dev version is refused.
+- **Databases:** database, user and password are separate. A database can have several users, users can be added/removed and get new passwords, and a database can be assigned to a website.
+- **Per-website phpMyAdmin** (Databases page, one click "Install and enable"): single sign-on through a one-time ticket as a MariaDB account that can only see that website's databases. Served by nginx on port **8444**.
+- **Clients:** *Clients* page creates a login for a customer and assigns websites to it. The client signs in on the normal login page and can only manage those websites: files, databases, phpMyAdmin, backups, cron, logs, SSL, PHP settings, SFTP keys, and WordPress/Laravel install on their own empty site. Everything else answers 403 (default deny). First login forces a new password.
+- **Node.js and Python sites** run as a systemd service under the website's own Linux user (hardened unit, journal logs, start/stop/restart, install dependencies).
+- Update from 1.0.3 through the panel's own auto-update: new files only live in `lib/`, `public/`, so the signed update path covers everything. phpMyAdmin and Python tools are installed on demand from *Settings -> Server tools* / *Databases*.
+
+### Notes
+- Port 8444 must be open in your cloud firewall for phpMyAdmin (the installer opens it in ufw).
+- The panel still runs as root. Client logins are isolated by an allowlist, per-website ownership checks and the per-site Linux users, but a flaw in the panel itself would still be a root flaw. Test on a snapshot before putting real customers on it.
 
 ## Version 1.0.3 development notes
 

@@ -24,8 +24,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
   /* ---- database creation ---- */
-  assert.throws(() => S.createDb('mysql'), /reserved/); assert.throws(() => S.createDb('root'), /reserved/); assert.throws(() => S.createDb('ab'), /Name:/); assert.throws(() => S.createDb('x; DROP DATABASE y'), /Name:/);
-  assert.match(S.createDb('shop_db'), /Password: [a-f0-9]{24}/); assert.deepEqual(c.load().dbs.map((d) => d.name), ['shop_db']);
+  assert.throws(() => S.createDb('mysql'), /reserved/); assert.throws(() => S.createDb('root'), /reserved/); assert.throws(() => S.createDb('ab'), /Database name:/); assert.throws(() => S.createDb('x; DROP DATABASE y'), /Database name:/);
+  assert.match(S.createDb('shop_db'), /Password: [A-Za-z0-9]{20}\n/); assert.deepEqual(c.load().dbs.map((d) => d.name), ['shop_db']);
   assert.throws(() => S.createDb('shop_db'), /already exists/);
   fs.writeFileSync(log, ''); fs.writeFileSync(T + '/exists-db', '1');
   assert.throws(() => S.createDb('blog_db'), /already exists on this server/); assert.ok(!fs.readFileSync(log, 'utf8').includes('CREATE DATABASE'), 'never touches an existing database'); fs.rmSync(T + '/exists-db');

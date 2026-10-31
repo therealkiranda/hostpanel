@@ -20,7 +20,12 @@ function express() {
         if (err) { if (!isErr) continue; return l.fn(err, req, res, next); }
         if (isErr) continue;
         if (l.method && !(req.method === l.method || (l.method === 'GET' && req.method === 'HEAD'))) continue;
-        if (l.path && l.path !== req.path) continue;
+        if (l.path) {
+          if (l.path.includes('/:')) { // minimal :param support, like express
+            const re = new RegExp('^' + l.path.replace(/:([A-Za-z]+)/g, '([^/]+)') + '$'), m = re.exec(req.path); if (!m) continue;
+            req.params = {}; (l.path.match(/:[A-Za-z]+/g) || []).forEach((n, k) => { req.params[n.slice(1)] = decodeURIComponent(m[k + 1]); });
+          } else if (l.path !== req.path) continue;
+        }
         try { return l.fn(req, res, next); } catch (e) { return next(e); }
       }
       if (err) { res.statusCode = 500; res.end('Error'); } else { res.statusCode = 404; res.end('Not found'); }

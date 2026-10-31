@@ -1,4 +1,5 @@
 'use strict';
+process.env.HP_NO_NETWORK = '1'; // 1.0.4: never look up versions on the internet in tests
 // Runs the REAL installer stack (apps/index -> engine -> WordPress handler -> host adapters -> worker.js -> php) in
 // temp folders, unprivileged, with only two things faked: `mysql` (a logging stub) and WP-CLI (a small PHP script that
 // mimics the commands HostPanel uses). Proves ordering, permissions, secrets handling and rollback on real files.

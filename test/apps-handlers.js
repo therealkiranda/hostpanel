@@ -101,5 +101,22 @@ const target = { dir: '/home/w1/public_html', rel: '/public_html' };
   h = fakeHost(); h.readFile = async (s, rel) => { if (rel.endsWith('/.env')) throw new Error('ENOENT'); return 'APP_KEY=\nDB_CONNECTION=sqlite\n'; };
   await laravel.install({ x: lx, site: lsite, target, db, host: h, log: () => {} });
   assert.ok(h.phpCalls.some((c) => c.args.includes('key:generate')), 'a missing APP_KEY is generated'); assert.ok(h.writes[0].content.includes('DB_DATABASE='));
+    /* ---- stable releases only (1.0.4): the newest stable version is pinned, anything else is refused ---- */
+  h = fakeHost(); h.stableVersion = async () => ({ version: '6.8.3' });
+  await wordpress.install({ x: wordpress.validate(Object.assign({ https: '1' }, base)), site, target, db, host: h, log: () => {} });
+  assert.ok(h.phpCalls[0].args.includes('--version=6.8.3'), 'WordPress is pinned to the newest stable release');
+  h = fakeHost(); h.stableVersion = async () => ({ version: '6.9-RC1' });
+  await assert.rejects(wordpress.install({ x: wordpress.validate(Object.assign({ https: '1' }, base)), site, target, db, host: h, log: () => {} }), /non-stable/);
+  h = fakeHost(); h.php = async (s, args) => { h.phpCalls.push({ args, opts: {} }); return /core version/.test(args.join(' ')) ? '6.9-beta2\n' : ''; };
+  await assert.rejects(wordpress.install({ x: wordpress.validate(Object.assign({ https: '1' }, base)), site, target, db, host: h, log: () => {} }), /not a stable release/);
+  h = fakeHost(); h.stableVersion = async () => ({ version: '12.0.2', php: '8.2' });
+  await laravel.install({ x: lx, site: lsite, target, db, host: h, log: () => {} });
+  const lc = h.phpCalls[0].args; assert.ok(lc.includes('12.0.2') && lc.includes('--stability=stable'), 'Laravel pinned + Composer stability=stable');
+  h = fakeHost(); await laravel.install({ x: lx, site: lsite, target, db, host: h, log: () => {} }); assert.ok(h.phpCalls[0].args.includes('--stability=stable'), 'stability=stable even when the lookup failed');
+  /* wizard database fields: separate name / user / password / prefix */
+  const wx = wordpress.validate(Object.assign({ https: '1', dbName: 'My_Blog', dbUser: 'blog_usr', dbPassword: 'Str0ngPassw0rd!x', tablePrefix: 'wpz_' }, base));
+  assert.deepEqual(wx.db, { name: 'my_blog', user: 'blog_usr', password: 'Str0ngPassw0rd!x' }); assert.equal(wx.tablePrefix, 'wpz_');
+  assert.equal(wordpress.validate(Object.assign({}, base)).db, null, 'no fields = automatic names');
+  for (const bad of [{ dbName: 'x y' }, { dbPassword: 'weak' }, { dbName: 'okname', dbUser: 'root' }, { dbName: 'okname', tablePrefix: 'a b_' }, { dbUser: 'only_user' }]) assert.throws(() => wordpress.validate(Object.assign({}, base, bad)), /./, JSON.stringify(bad));
   console.log('app installer handler tests passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

@@ -116,27 +116,33 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   const db = JSON.parse(fs.readFileSync(BASE + '/data/db.json', 'utf8'));
   db.sites.push({ domain: 'example.com', type: 'static', user: 'tester', home, root: home + '/public_html', docroot: home + '/public_html', created: new Date().toISOString(), ssl: false, certNames: [], cfg: {}, autoSsl: false });
   fs.writeFileSync(BASE + '/data/db.json', JSON.stringify(db));
-  for (const p of ['/', '/apps', '/apps/install?app=wordpress', '/apps/install?app=laravel&site=example.com', '/sites', '/sites/manage?domain=example.com', '/files', '/files?site=example.com&p=/public_html', '/databases', '/backups', '/cron', '/services', '/tasks', '/security', '/updates', '/audit', '/settings', '/account', '/logs?site=example.com&type=error']) {
+  for (const p of ['/', '/sites/new', '/sites/new/wordpress', '/sites/new/laravel', '/sites/new/node', '/sites/new/php', '/sites/new/static', '/sites/new/python', '/sites/new/proxy', '/users', '/sites', '/sites/manage?domain=example.com', '/files', '/files?site=example.com&p=/public_html', '/databases', '/backups', '/cron', '/services', '/tasks', '/security', '/updates', '/audit', '/settings', '/account', '/logs?site=example.com&type=error']) {
     r = await call('GET', p, { jar: A }); assert.equal(r.status, 200, p + ' -> ' + r.status + ' ' + r.text.slice(0, 200));
   }
   assert.equal((await call('GET', '/sites/manage?domain=nope.example', { jar: A })).status, 302);
 
   /* ---------- app installer pages and validation (nothing may be created on bad input) ---------- */
-  r = await call('GET', '/apps', { jar: A }); assert.ok(r.text.includes('WordPress') && r.text.includes('Laravel') && r.text.includes('Installed applications'));
-  r = await call('GET', '/apps/install?app=wordpress', { jar: A });
-  assert.ok(r.text.includes('name="adminPassword"') && /name="adminPassword" type="text" value="[a-f0-9]{24}"/.test(r.text) && r.text.includes('name="target"') && r.text.includes('example.com (existing)') === false, 'wordpress form (static sites are not offered)');
+  r = await call('GET', '/sites/new', { jar: A });
+  for (const n of ['WordPress', 'Laravel', 'Node.js', 'PHP', 'Static HTML', 'Python', 'Reverse Proxy']) assert.ok(r.text.includes('Create a ' + n + ' site'), 'picker offers ' + n);
+  assert.equal((await call('GET', '/apps', { jar: A })).headers.location, '/sites/new', 'old App Installer URL redirects');
+  r = await call('GET', '/sites/new/wordpress', { jar: A });
+  assert.ok(/name="adminPassword" type="text" class="mono" value="[A-Za-z0-9]{20}"/.test(r.text) && r.text.includes('name="target"') && r.text.includes('name="dbName"') && r.text.includes('name="dbUser"') && r.text.includes('name="dbPassword"') && r.text.includes('name="tablePrefix"') && !r.text.includes('example.com (existing)'), 'wordpress wizard has separate database name / user / password (static sites are not offered)');
+  assert.ok(r.text.includes('Stable only'), 'stable-only notice');
   assert.ok(!/<script(?![^>]*src=)/.test(r.text) && !/ style=/.test(r.text), 'no inline script/style (CSP)');
-  assert.equal((await call('GET', '/apps/install?app=nope', { jar: A })).headers.location, '/apps');
-  r = await call('POST', '/apps/install', { form: { app: 'wordpress' } }); assert.equal(r.status, 401);
-  r = await call('POST', '/apps/install', { jar: A, form: { app: 'wordpress' } }); assert.equal(r.status, 403, 'CSRF required');
+  assert.equal((await call('GET', '/sites/new/nope', { jar: A })).headers.location, '/sites/new');
+  r = await call('POST', '/sites/new/wordpress', { form: { app: 'wordpress' } }); assert.equal(r.status, 401);
+  r = await call('POST', '/sites/new/wordpress', { jar: A, form: { app: 'wordpress' } }); assert.equal(r.status, 403, 'CSRF required');
   const dbBefore = fs.readFileSync(BASE + '/data/db.json', 'utf8');
-  r = await post(A, '/apps/install', { app: 'wordpress', target: '__new__', domain: 'not a domain', title: 'T', adminUsername: 'owner1', adminEmail: 'a@b.co', adminPassword: 'x'.repeat(20), locale: 'en_US' });
-  assert.match(r.headers.location, /^\/apps\/install\?app=wordpress/); assert.match((await flashOf(A, r.headers.location)).flash, /valid domain/);
-  r = await post(A, '/apps/install', { app: 'wordpress', target: '__new__', domain: 'fresh.example.org', title: 'T', adminUsername: 'admin', adminEmail: 'a@b.co', adminPassword: 'x'.repeat(20), locale: 'en_US' });
+  const wp = { target: '__new__', title: 'T', adminUsername: 'owner1', adminEmail: 'a@b.co', adminPassword: 'x'.repeat(20), locale: 'en_US', dbName: 'wp_site1', dbUser: 'wpu_site1', dbPassword: 'Str0ngPassw0rd!x', tablePrefix: 'wpz_' };
+  r = await post(A, '/sites/new/wordpress', Object.assign({}, wp, { domain: 'not a domain' }));
+  assert.match(r.headers.location, /^\/sites\/new\/wordpress/); assert.match((await flashOf(A, r.headers.location)).flash, /valid domain/);
+  r = await post(A, '/sites/new/wordpress', Object.assign({}, wp, { domain: 'fresh.example.org', adminUsername: 'admin' }));
   const back = await flashOf(A, r.headers.location); assert.match(back.flash, /non-default/);
-  assert.ok(back.text.includes('value="fresh.example.org"') && !back.text.includes('x'.repeat(20)), 'typed values are kept on error, the password is not');
+  assert.ok(back.text.includes('value="fresh.example.org"') && back.text.includes('value="wp_site1"') && !back.text.includes('x'.repeat(20)) && !back.text.includes('Str0ngPassw0rd'), 'typed values are kept on error, passwords are not');
+  for (const bad of [{ dbName: 'Bad Name' }, { dbPassword: 'short' }, { dbUser: 'root' }, { tablePrefix: 'bad prefix' }]) {
+    r = await post(A, '/sites/new/wordpress', Object.assign({}, wp, { domain: 'fresh.example.org' }, bad)); assert.match((await flashOf(A, r.headers.location)).flash, /./);
+  }
   assert.equal(fs.readFileSync(BASE + '/data/db.json', 'utf8'), dbBefore, 'rejected installs change nothing');
-  assert.ok((await call('GET', '/sites/manage?domain=example.com', { jar: A })).text.includes('Open the App Installer'));
 
   /* ---------- file manager (now asynchronous) ---------- */
   const pub = home + '/public_html', f = (name) => pub + '/' + name;
