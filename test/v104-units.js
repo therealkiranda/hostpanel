@@ -41,7 +41,7 @@ const access = require('../lib/access');
   assert.ok(cfg.includes("'auth_type'] = 'signon'") && cfg.includes("AllowNoPassword'] = false") && cfg.includes("AllowArbitraryServer'] = false")); assert.throws(() => pma.configPhp("x'; system('id'); '"), /Bad secret/);
   const pool = pma.poolConf(); assert.ok(pool.includes('open_basedir') && pool.includes('user = www-data') && !pool.includes('root'));
   assert.ok(pma.urlFor('panel.example.com:8443', 'ab').startsWith('https://panel.example.com:8444/hp-signon?t=ab')); assert.throws(() => pma.urlFor('bad host/../x', 'ab'), /address/);
-  const signon = fs.readFileSync(__dirname + '/../lib/pma/signon.php', 'utf8'); assert.ok(signon.includes('unlink($file)') && signon.includes('[a-f0-9]{48}') && signon.includes("'secure' => true") && signon.includes('(int)$j[\'exp\'] < time()'), 'single-use, expiring ticket');
+  const signon = fs.readFileSync(__dirname + '/../lib/pma/signon.php', 'utf8'); assert.ok(signon.includes('@unlink($file)') && signon.includes('hash_equals') && signon.includes('[a-f0-9]{48}') && signon.includes("'secure' => true") && signon.includes('(int)$j[\'exp\'] < time()'), 'expiring ticket bound to the first browser');
 
   /* database SQL safety */
   assert.equal(dbs.q("a'b\\c"), "'a\\'b\\\\c'"); assert.throws(() => dbs.q('a\nb'), /Invalid/); assert.equal(dbs.gdb('wp_site_1'), '`wp\\_site\\_1`'); assert.throws(() => dbs.gdb('x`; DROP'), /Bad/);

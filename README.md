@@ -1,4 +1,4 @@
-# 🚀 HostPanel 1.0.4
+# 🚀 HostPanel 1.0.5
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -232,6 +232,10 @@ sudo bash install.sh
 ## 🧪 Testing & Verification Note
 
 This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
+
+## Version 1.0.5
+- **Password reset by email for everyone** (administrator and clients): *Forgot password?* on the login page. Configure it in *Settings -> Email* (Resend: host `smtp.resend.com`, port 465, user `resend`, password = API key, From on a domain verified in Resend), add your own email there and press *Send a test email*. Reset links work once for 30 minutes; only a hash of the token is stored; the answer never reveals whether an account exists.
+- **phpMyAdmin link no longer "expires"**: the sign-in link is valid for 10 minutes and can be reloaded in the same browser (switching Chrome to Desktop site works); phpMyAdmin stays signed in for 8 hours.
 
 ## Version 1.0.4
 

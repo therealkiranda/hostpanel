@@ -1,5 +1,5 @@
 'use strict';
-// HostPanel 1.0.4 - web server and pages.
+// HostPanel 1.0.5 - web server and pages.
 const express = require('express');
 const session = require('express-session');
 const https = require('https');
@@ -97,14 +97,15 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   const authed = !!req.session.user;
   if (req.method === 'GET' || req.method === 'HEAD') {
-    if (authed || req.path === '/login') { if (!req.session.csrf) req.session.csrf = rand(16); }
+    if (authed || req.path === '/login' || req.path === '/forgot' || req.path === '/reset') { if (!req.session.csrf) req.session.csrf = rand(16); }
     return next();
   }
-  if (!authed && req.path !== '/login') { if (req.method === 'PUT') req.resume(); return res.status(401).send('Login required'); }
+  if (!authed && !['/login', '/forgot', '/reset'].includes(req.path)) { if (req.method === 'PUT') req.resume(); return res.status(401).send('Login required'); }
   const tok = (req.body && req.body._csrf) || req.get('x-csrf-token') || '';
   if (!req.session.csrf || !safeEq(tok, req.session.csrf)) { if (req.method === 'PUT') req.resume(); return res.status(403).send('Bad CSRF token'); }
   next();
 });
+let mailCardFn = () => '';
 const actorOf = U.actorOf, isClient = access.isCustomer;
 const forbidden = (req, res) => { if (req.method === 'PUT') req.resume(); res.status(403); if (req.method === 'GET') return page(req, res, 'Not allowed', '<div class="card empty"><h2>Not allowed</h2><p>Your login cannot open this page.</p><a class="btn" href="/">Back to dashboard</a></div>'); return res.send('Not allowed'); };
 const auth = (req, res, next) => {
@@ -151,7 +152,7 @@ app.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
   page(req, res, 'Sign in', '<div class="login"><div class="logo">' + ui.svg('logo') + '</div><h1>HostPanel</h1><p class="sub">Sign in to manage your server or website</p><form method="post" action="/login" data-nolock>' + csrf(req) +
     field('Username', '<input name="user" autocomplete="username" required autofocus>') + field('Password', '<input name="pass" type="password" autocomplete="current-password" required>') +
-    field('2FA code', '<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Only if 2FA is enabled">') + '<button>Sign in</button></form></div>', { bare: true });
+    field('2FA code', '<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Only if 2FA is enabled">') + '<button>Sign in</button></form><p class="sub"><a href="/forgot">Forgot password?</a></p></div>', { bare: true });
 });
 app.post('/login', (req, res) => {
   const ipa = c.cleanIp(req), now = Date.now();
@@ -528,7 +529,7 @@ app.get('/settings', auth, (req, res) => {
   const polCard = '<div class="card"><h2>PHP security policy</h2><form method="post" action="/settings/php-policy">' + csrf(req) + field('Disabled PHP functions', sel('policy', [['strict', 'Strict (blocks exec, proc_open, shell_exec, system, passthru ...) - recommended'], ['standard', 'Standard (blocks shell_exec, system, passthru, popen ...)']], st.phpPolicy), 'Use Standard only if a plugin (for example an image optimizer or backup plugin) needs exec().') + '<button>Apply to all PHP versions</button></form></div>';
   const sftpCard = '<div class="card"><h2>SFTP password login</h2><p class="muted">Site users can only use SFTP (no shell). Turn passwords off to allow SSH keys only (add keys on each website page).</p><form class="row" method="post" action="/settings/sftp">' + csrf(req) + sel('on', [['1', 'Passwords allowed'], ['0', 'SSH keys only']], st.sftpPassword ? '1' : '0') + '<button>Save</button></form></div>';
   const toolsCard = '<div class="card"><h2>Server tools</h2><p class="muted">Extra software HostPanel can add with one click. Each runs as a visible task.</p>' + Object.keys(tools.TOOLS).map((id) => { const t = tools.TOOLS[id], on = t.ready(); return '<div class="row-acts"><b>' + esc(t.label) + '</b> ' + (on ? badge('Installed', 'ok') : badge('Not installed', 'warn')) + ' <span class="muted">' + esc(t.summary) + '</span> ' + (on ? '' : fbtn(req, '/tools/install', { id }, 'Install', 'g', 'data-confirm="Install ' + esc(t.label) + ' now?"')) + '</div>'; }).join('') + '</div>';
-  page(req, res, 'Settings', '<div class="grid two">' + domCard + directCard + emailCard + polCard + sftpCard + toolsCard + '</div>');
+  page(req, res, 'Settings', '<div class="grid two">' + domCard + directCard + emailCard + polCard + sftpCard + toolsCard + mailCardFn(req, d) + '</div>');
 });
 app.post('/settings/panel-domain', auth, wrap((req) => S.setPanelDomain(req.body.domain, req.body.email), '/tasks', 'PANEL_DOMAIN'));
 app.post('/settings/panel-domain/remove', auth, wrap(() => S.removePanelDomain(), '/settings', 'PANEL_DOMAIN_REMOVE'));
@@ -543,6 +544,7 @@ const ctx = { app, auth, page, csrf, esc, badge, fbtn, field, sel, table, q, c, 
 require('./lib/routes/wizard')(ctx);
 require('./lib/routes/databases')(ctx);
 require('./lib/routes/users')(ctx);
+mailCardFn = require('./lib/routes/reset')(Object.assign({ ui, bcrypt }, ctx)).mailCard;
 
 /* ================= account (a client only changes their own password) ================= */
 app.get('/account', auth, (req, res, next) => {

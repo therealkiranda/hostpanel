@@ -10,7 +10,7 @@ node --check lib/sites.js
 node --check lib/sys.js
 node --check lib/ui.js
 node --check lib/routes/account.js
-for f in lib/routes/*.js lib/dbs.js lib/pma.js lib/runtime.js lib/tools.js lib/access.js lib/users.js; do node --check "$f"; done
+for f in lib/routes/*.js lib/mail.js lib/dbs.js lib/pma.js lib/runtime.js lib/tools.js lib/access.js lib/users.js; do node --check "$f"; done
 node --check lib/siteexec.js
 node --check lib/motd.js
 for f in lib/apps/*.js; do node --check "$f"; done
@@ -24,8 +24,8 @@ node test/template-check.js
 node test/nginx-template-smoke.js
 node test/username-validation.js
 bash -n install.sh
-for t in apps-engine apps-handlers apps-download apps-e2e motd v104-units clients-e2e; do grep -q "test/$t.js" package.json; done
-grep -q '"version": "1.0.4"' package.json
+for t in apps-engine apps-handlers apps-download apps-e2e motd v104-units clients-e2e mail-starttls reset-e2e; do grep -q "test/$t.js" package.json; done
+grep -q '"version": "1.0.5"' package.json
 grep -q "app.post('/account/username'" lib/routes/account.js
 grep -q "type === 'static'" lib/sites.js
 grep -q 'site-static.tpl' lib/sites.js
