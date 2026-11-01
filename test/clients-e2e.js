@@ -62,6 +62,7 @@ async function start() {
   for (let i = 0; i < 100; i++) { if (outp.join('').includes('on https://')) return; if (server.exitCode !== null) throw new Error('server exited: ' + outp.join('')); await new Promise((r) => setTimeout(r, 100)); }
   throw new Error('server did not start: ' + outp.join(''));
 }
+const wdb = (txt) => { fs.writeFileSync(BASE + '/data/db.json.tmp', txt); fs.renameSync(BASE + '/data/db.json.tmp', BASE + '/data/db.json'); }; // atomic, like the server's own save
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
 
@@ -77,7 +78,7 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   if (dropRoot) execFileSync('chown', ['-R', '65534:65534', HOMES]);
   let db = JSON.parse(fs.readFileSync(BASE + '/data/db.json', 'utf8'));
   db.sites.push(s1, s2); db.dbs = [{ name: 'legacy_db', created: new Date().toISOString(), site: 'other.com' }];
-  fs.writeFileSync(BASE + '/data/db.json', JSON.stringify(db));
+  wdb(JSON.stringify(db));
   fs.mkdirSync(BASE + '/backups', { recursive: true });
   for (const f of ['site-example.com-20260101000000.tar.gz', 'site-other.com-20260101000000.tar.gz', 'db-legacy_db-20260101000000.sql.gz']) fs.writeFileSync(BASE + '/backups/' + f, 'x');
 

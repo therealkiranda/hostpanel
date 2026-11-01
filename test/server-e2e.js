@@ -18,7 +18,7 @@ execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days
 fs.chmodSync(BASE + '/data/panel.key', 0o644);
 const PORT = 20000 + Math.floor(Math.random() * 20000);
 const CRED = T + '/cred.txt';
-const env = Object.assign({}, process.env, { HP_BASE: BASE, HP_CRED: CRED, HP_AUTHLOG: T + '/auth.log', HP_HOMES: HOMES, PANEL_PORT: String(PORT), PANEL_HOST: '127.0.0.1', NODE_PATH: path.join(__dirname, 'shims') });
+const env = Object.assign({}, process.env, { HP_NO_NETWORK: '1', HP_BASE: BASE, HP_CRED: CRED, HP_AUTHLOG: T + '/auth.log', HP_HOMES: HOMES, PANEL_PORT: String(PORT), PANEL_HOST: '127.0.0.1', NODE_PATH: path.join(__dirname, 'shims') });
 const dropRoot = process.getuid && process.getuid() === 0;
 const cmd = dropRoot ? 'setpriv' : process.execPath;
 const args = (dropRoot ? ['--reuid=65534', '--regid=65534', '--clear-groups', process.execPath] : []).concat([path.join(ROOT, 'server.js')]);
@@ -61,6 +61,7 @@ async function start() {
   for (let i = 0; i < 100; i++) { if (outp.join('').includes('on https://')) return; if (server.exitCode !== null) throw new Error('server exited: ' + outp.join('')); await new Promise((r) => setTimeout(r, 100)); }
   throw new Error('server did not start: ' + outp.join(''));
 }
+const wdb = (txt) => { fs.writeFileSync(BASE + '/data/db.json.tmp', txt); fs.renameSync(BASE + '/data/db.json.tmp', BASE + '/data/db.json'); }; // atomic, like the server's own save
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
@@ -115,7 +116,7 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   if (dropRoot) execFileSync('chown', ['-R', '65534:65534', HOMES]); // the site user (the server runs as 'nobody' here)
   const db = JSON.parse(fs.readFileSync(BASE + '/data/db.json', 'utf8'));
   db.sites.push({ domain: 'example.com', type: 'static', user: 'tester', home, root: home + '/public_html', docroot: home + '/public_html', created: new Date().toISOString(), ssl: false, certNames: [], cfg: {}, autoSsl: false });
-  fs.writeFileSync(BASE + '/data/db.json', JSON.stringify(db));
+  wdb(JSON.stringify(db));
   for (const p of ['/', '/sites/new', '/sites/new/wordpress', '/sites/new/laravel', '/sites/new/node', '/sites/new/php', '/sites/new/static', '/sites/new/python', '/sites/new/proxy', '/users', '/sites', '/sites/manage?domain=example.com', '/files', '/files?site=example.com&p=/public_html', '/databases', '/backups', '/cron', '/services', '/tasks', '/security', '/updates', '/audit', '/settings', '/account', '/logs?site=example.com&type=error']) {
     r = await call('GET', p, { jar: A }); assert.equal(r.status, 200, p + ' -> ' + r.status + ' ' + r.text.slice(0, 200));
   }

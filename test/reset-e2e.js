@@ -71,6 +71,7 @@ async function start() {
   for (let i = 0; i < 100; i++) { if (outp.join('').includes('on https://')) return; if (server.exitCode !== null) throw new Error('server exited: ' + outp.join('')); await new Promise((r) => setTimeout(r, 100)); }
   throw new Error('server did not start: ' + outp.join(''));
 }
+const wdb = (txt) => { fs.writeFileSync(BASE + '/data/db.json.tmp', txt); fs.renameSync(BASE + '/data/db.json.tmp', BASE + '/data/db.json'); }; // atomic, like the server's own save
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
 
@@ -81,7 +82,7 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   const A = jar();
   const pass0 = /Panel password: (\S+)/.exec(fs.readFileSync(CRED, 'utf8'))[1];
   await login(A, 'admin', pass0); const pass1 = 'a-much-longer-password-1'; await post(A, '/account', { cur: pass0, nw: pass1 });
-  const setDb = (fn) => { const d = JSON.parse(fs.readFileSync(BASE + '/data/db.json', 'utf8')); fn(d); fs.writeFileSync(BASE + '/data/db.json', JSON.stringify(d)); };
+  const setDb = (fn) => { const d = JSON.parse(fs.readFileSync(BASE + '/data/db.json', 'utf8')); fn(d); wdb(JSON.stringify(d)); };
   setDb((d) => { d.settings.ip = '203.0.113.5'; });
   const waitMail = async (n) => { for (let i = 0; i < 60 && mails.length < n; i++) await pause(100); assert.ok(mails.length >= n, 'mail #' + n + ' arrived'); return mails[n - 1]; };
   const linkOf = (m) => /https:\/\/203\.0\.113\.5:\d+(\/reset\?token=[a-f0-9]{64})/.exec(Buffer.from(m.raw.split('\n\n').pop().replace(/\n/g, ''), 'base64').toString('utf8'));
