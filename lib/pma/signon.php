@@ -8,10 +8,14 @@ declare(strict_types=1);
 const TICKETS = '/opt/hostpanel/pma/tickets/';
 session_name('HPPMA');
 session_set_cookie_params(['lifetime' => 28800, 'path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
-session_start();
-function go(): void { session_write_close(); header('Cache-Control: no-store'); header('Location: /index.php', true, 303); exit; }
+ini_set('session.use_strict_mode', '1');
+// A session is only opened when it is needed: an unknown or forged link must not create a session file on disk
+// (bots hitting /hp-signon would otherwise fill the sessions folder for 8 hours).
+function begin(): void { if (session_status() !== PHP_SESSION_ACTIVE) session_start(); }
+function haveSession(): bool { $id = $_COOKIE['HPPMA'] ?? ''; return is_string($id) && preg_match('/^[A-Za-z0-9,-]{22,128}$/', $id) === 1 && is_file(rtrim((string)session_save_path(), '/') . '/sess_' . $id); }
+function go(): void { begin(); session_write_close(); header('Cache-Control: no-store'); header('Location: /index.php', true, 303); exit; }
 function deny(): void { http_response_code(403); header('Content-Type: text/plain; charset=utf-8'); echo "This link has expired. Open phpMyAdmin again from HostPanel.\n"; exit; }
-function already(): void { if (!empty($_SESSION['PMA_single_signon_user'])) go(); deny(); } // a signed-in browser just continues
+function already(): void { if (haveSession()) { begin(); if (!empty($_SESSION['PMA_single_signon_user'])) go(); session_write_close(); } deny(); } // a signed-in browser just continues
 $t = $_GET['t'] ?? '';
 if (!is_string($t) || !preg_match('/^[a-f0-9]{48}$/', $t)) already();
 $file = TICKETS . $t;
@@ -28,6 +32,7 @@ if (isset($j['b'])) { // used before: only the same browser may use it again
     @file_put_contents($file, json_encode($j), LOCK_EX);
     setcookie('HPPMAB', $c, ['expires' => time() + 900, 'path' => '/hp-signon', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
 }
+begin();
 $_SESSION = [];
 $_SESSION['PMA_single_signon_user'] = (string)$j['u'];
 $_SESSION['PMA_single_signon_password'] = (string)$j['p'];

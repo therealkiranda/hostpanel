@@ -1,4 +1,4 @@
-# 🚀 HostPanel 1.0.5
+# 🚀 HostPanel 1.0.6
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -18,7 +18,7 @@
 HostPanel gives you absolute control over your web server without the bloat of traditional panels. It provides automated security, effortless SSL provisioning, background backup routines, and isolated site environments—all optimized for low-resource VPS setups.
 
 - 🌐 **Websites & Proxies:** Native support for PHP / WordPress, Laravel, or custom reverse-proxies (Node.js, Python, Go, etc.).
-- 🔒 **Automated SSL:** Free, auto-renewing Let's Encrypt SSL certificates for every hosted site.
+- 🔒 **SSL:** Free Let's Encrypt certificates, issued with one click from each website's SSL card (auto-renewing afterwards).
 - 🎯 **Custom Panel Domain:** Run your control panel securely under `https://panel.yourdomain.com` with valid certificates alongside standard direct port access (`IP:8443`).
 - 📁 **File & Site Management:** Built-in web File Manager, 1GB upload limit, embedded code editor, and SFTP-only isolated site users (strictly no shell access).
 - 🧩 **App Installer:** one-click WordPress (and Laravel) on a new or existing site — website, database, configuration and first admin created for you.
@@ -48,7 +48,7 @@ The installation routine takes approximately 5–10 minutes and automatically co
 ### 1. Upload Assets
 From your local terminal or Termux, upload the release package to your server:
 ```bash
-scp hostpanel-1.0.zip root@YOUR_SERVER_IP:/root/
+scp hostpanel-1.0.6.zip root@YOUR_SERVER_IP:/root/
 ```
 
 ### 2. Execute Installer
@@ -56,8 +56,8 @@ Connect via SSH and execute the setup script:
 ```bash
 ssh root@YOUR_SERVER_IP
 apt-get update && apt-get install -y unzip
-unzip hostpanel-1.0.zip
-cd hostpanel-1.0
+unzip hostpanel-1.0.6.zip
+cd hostpanel
 sudo bash install.sh
 ```
 
@@ -72,7 +72,7 @@ Panel password: <generated-password>
 ### 3. Initial Configuration
 1. Navigate to `https://YOUR_SERVER_IP:8443` in your browser. *(Bypass the initial self-signed SSL warning).*
 2. Sign in and immediately update your password (minimum 12 characters).
-3. Navigate to **Account → Enable 2FA** to pair your preferred authenticator app.
+3. Set up your authenticator app when asked (**required** for every login, from this version on).
 
 ---
 
@@ -233,7 +233,12 @@ sudo bash install.sh
 
 This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
 
-## Version 1.0.5
+## Version 1.0.6
+- **Two-factor authentication is mandatory** for the administrator and for every client. The first sign-in only opens the Account page until an authenticator app (Google Authenticator, Microsoft Authenticator, Aegis, Authy, 2FAS...) is set up; on a phone, tap *Open in my authenticator app*. Every later sign-in needs the 6-digit code, and a code works only once. There is no "turn 2FA off" button. A new phone: *Account -> Replace my authenticator* (needs password + current code). Lost phone: the administrator resets a client under *Clients -> Manage -> Reset 2FA*; the administrator runs `sudo hostpanel-cli reset-2fa` on the server (it clears the secret, setup is forced again; `sudo hostpanel-cli reset-2fa CLIENTNAME` does the same for a client).
+- **PHP 8.4 and PHP 8.5** can be added from *Settings -> Server tools* (one click, shown as a task; the ondrej/php repository is added automatically when Ubuntu does not carry the version). Each website then picks its PHP version on its page; new websites default to 8.4. The exact patch release (for example 8.5.x) is whatever the repository currently ships. phpMyAdmin stays on the PHP version it already uses.
+- **Log out** is now a button in the top bar on every page (it was only at the very bottom of the sidebar, out of reach on phones).
+- WordPress administrator password: minimum **8** characters (was 16).
+- Security: the phpMyAdmin sign-in script no longer creates a session file for unknown links, so bots cannot fill the disk; download file names can no longer contain quotes.
 - **Password reset by email for everyone** (administrator and clients): *Forgot password?* on the login page. Configure it in *Settings -> Email* (Resend: host `smtp.resend.com`, port 465, user `resend`, password = API key, From on a domain verified in Resend), add your own email there and press *Send a test email*. Reset links work once for 30 minutes; only a hash of the token is stored; the answer never reveals whether an account exists.
 - **phpMyAdmin link no longer "expires"**: the sign-in link is valid for 10 minutes and can be reloaded in the same browser (switching Chrome to Desktop site works); phpMyAdmin stays signed in for 8 hours.
 

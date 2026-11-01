@@ -4,7 +4,7 @@ const { validate, installWordPress } = require('../lib/wordpress-installer');
 const input = { domain: 'example.com', title: 'Example', adminUsername: 'siteowner', adminEmail: 'owner@example.com', adminPassword: 'very-long-and-random-password-2026', locale: 'en_US' };
 assert.equal(validate(input).domain, 'example.com');
 assert.throws(() => validate({ ...input, adminUsername: 'admin' }), /non-default/);
-assert.throws(() => validate({ ...input, adminPassword: 'short' }), /16-200/);
+assert.throws(() => validate({ ...input, adminPassword: 'short' }), /8-200/);
 (async () => {
   const calls = [];
   const adapters = {

@@ -52,7 +52,7 @@ const wp = catalog.get('wordpress'), lv = catalog.get('laravel');
   assert.ok(!logs.join('\n').includes(wpInput.adminPassword), 'the administrator password is never logged');
 
   /* ---- bad input: nothing at all is created ---- */
-  for (const [patch, re] of [[{ adminUsername: 'admin' }, /non-default/], [{ adminPassword: 'short' }, /16-200/], [{ domain: 'nope' }, /valid domain/], [{ adminEmail: 'x' }, /email/], [{ path: '../etc' }, /Folder must be/], [{ locale: 'xx;rm' }, /locale/]]) {
+  for (const [patch, re] of [[{ adminUsername: 'admin' }, /non-default/], [{ adminPassword: 'short' }, /8-200/], [{ domain: 'nope' }, /valid domain/], [{ adminEmail: 'x' }, /email/], [{ path: '../etc' }, /Folder must be/], [{ locale: 'xx;rm' }, /locale/]]) {
     h = fakeHost(); await assert.rejects(() => installApp(wp, Object.assign({}, wpInput, patch), h, () => {}), re);
     assert.deepEqual(h.calls, [], 'no adapter was called for invalid input: ' + JSON.stringify(patch));
   }

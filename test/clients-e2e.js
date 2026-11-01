@@ -46,9 +46,27 @@ function call(method, url, o) {
   });
 }
 const csrfOf = (html) => { const m = /name="_csrf" value="([a-f0-9]+)"|data-csrf="([a-f0-9]+)"/.exec(html); return m && (m[1] || m[2]); };
-async function login(j, user, pass, headers) {
+
+/* ---- authenticator (2FA is mandatory): a tiny TOTP client so the tests sign in exactly like a real user ---- */
+const SECRETS = {};
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const b32dec = (s) => { let bits = ''; for (const ch of s) bits += B32.indexOf(ch).toString(2).padStart(5, '0'); const o = []; for (let i = 0; i + 8 <= bits.length; i += 8) o.push(parseInt(bits.slice(i, i + 8), 2)); return Buffer.from(o); };
+const hotp = (secret, counter) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(counter)); const h = crypto.createHmac('sha1', b32dec(secret)).update(b).digest(); const o = h[19] & 15; return String((((h[o] & 0x7f) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1000000).padStart(6, '0'); };
+const totpNow = (secret) => hotp(secret, Math.floor(Date.now() / 30000));
+const forgetLast = (user) => { const f = BASE + '/data/db.json', db = JSON.parse(fs.readFileSync(f, 'utf8')); if (user === db.admin.user) db.admin.totpLast = 0; else { const u = (db.users || []).find((x) => x.username === user); if (u) u.totpLast = 0; } fs.writeFileSync(f, JSON.stringify(db)); }; // a code may only be used once; tests sign in many times per 30 s
+const codeFor = (user) => { if (!SECRETS[user]) return ''; forgetLast(user); return totpNow(SECRETS[user]); };
+async function enrol(j, user) {
+  const t = csrfOf((await call('GET', '/account', { jar: j })).text);
+  await call('POST', '/account/2fa/start', { jar: j, form: { _csrf: t } });
+  const pg = await call('GET', '/account', { jar: j });
+  const m = /id="tk">([A-Z2-7 ]+)<\/pre>/.exec(pg.text); assert.ok(m, 'setup page shows the key');
+  const secret = m[1].replace(/ /g, '');
+  const r = await call('POST', '/account/2fa/enable', { jar: j, form: { _csrf: csrfOf(pg.text), code: totpNow(secret) } });
+  SECRETS[user] = secret; return r;
+}
+async function login(j, user, pass, headers, code) {
   const page = await call('GET', '/login', { jar: j, headers });
-  const r = await call('POST', '/login', { jar: j, headers, form: { _csrf: csrfOf(page.text), user, pass, code: '' } });
+  const r = await call('POST', '/login', { jar: j, headers, form: { _csrf: csrfOf(page.text), user, pass, code: code === undefined ? codeFor(user) : code } });
   return r;
 }
 const post = async (j, url, form) => { const t = await getCsrf(j); return call('POST', url, { jar: j, form: Object.assign({ _csrf: t }, form) }); };
@@ -71,6 +89,7 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   const A = jar(), C = jar();
   const pass0 = /Panel password: (\S+)/.exec(fs.readFileSync(CRED, 'utf8'))[1];
   await login(A, 'admin', pass0); const pass1 = 'a-much-longer-password-1'; await post(A, '/account', { cur: pass0, nw: pass1 });
+  await enrol(A, 'admin');
 
   // two websites (as if created by the wizard) and one legacy 1.0.3-style database without users/owner
   const mk = (dom, user) => { const home = HOMES + '/' + user; for (const d of ['', '/public_html', '/tmp', '/logs']) fs.mkdirSync(home + d, { recursive: true, mode: 0o755 }); return { domain: dom, type: 'static', user, home, root: home + '/public_html', docroot: home + '/public_html', created: new Date().toISOString(), ssl: false, certNames: [], cfg: {}, autoSsl: false }; };
@@ -104,6 +123,15 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   await cpost('/account', { current: 'Client-Pass-12345', password: 'Client-Pass-12345', again: 'Client-Pass-12345' });
   assert.match((await flashOf(C, '/account')).flash, /not used/);
   await cpost('/account', { current: 'Client-Pass-12345', password: 'My-New-Client-Pass-9', again: 'My-New-Client-Pass-9' });
+  r = await call('GET', '/sites', { jar: C }); assert.equal(r.headers.location, '/account', 'client pages stay closed until the authenticator is set up');
+  r = await call('POST', '/databases/add', { jar: C, form: { _csrf: csrfOf((await call('GET', '/account', { jar: C })).text), name: 'x' } }); assert.equal(r.headers.location, '/account', 'client actions too');
+  assert.ok((await call('GET', '/account', { jar: C })).text.includes('Set up authenticator app'), 'client account page offers the setup');
+  r = await call('POST', '/account/2fa/enable', { jar: C, form: { _csrf: csrfOf((await call('GET', '/account', { jar: C })).text), code: '000000' } }); assert.match((await flashOf(C, '/account')).flash, /Start the setup first/);
+  await enrol(C, 'kiran');
+  const cj = jar(); assert.equal((await login(cj, 'kiran', 'My-New-Client-Pass-9', undefined, '')).headers.location, '/login', 'a client with an authenticator cannot sign in without a code');
+  assert.equal((await login(jar(), 'kiran', 'My-New-Client-Pass-9', undefined, '123456')).headers.location, '/login', 'wrong code refused');
+  const used = codeFor('kiran'); assert.equal((await login(jar(), 'kiran', 'My-New-Client-Pass-9', undefined, used)).headers.location, '/', 'right code accepted');
+  assert.equal((await login(jar(), 'kiran', 'My-New-Client-Pass-9', undefined, used)).headers.location, '/login', 'a code cannot be used twice (replay)');
   assert.equal((await call('GET', '/', { jar: C })).status, 200, 'signed in after changing the password');
 
   /* ---------- the client sees only their website ---------- */

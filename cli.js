@@ -4,7 +4,7 @@
 const c = require('./lib/core');
 const cmd = process.argv[2];
 const usage = () => {
-  console.log('HostPanel ' + c.VERSION + ' recovery tool\n\nUsage: sudo hostpanel-cli <command>\n\n  reset-password   Generate a new admin password (and turn the "must change" flag on)\n  disable-2fa      Turn off two-factor authentication\n  open-port        Open the panel port to everyone again (undo IP restriction)\n  status           Show panel settings\n  motd [install|remove|quiet|default|status]\n                   SSH login banner (install is automatic; quiet hides the stock Ubuntu greeting, default restores it)');
+  console.log('HostPanel ' + c.VERSION + ' recovery tool\n\nUsage: sudo hostpanel-cli <command>\n\n  reset-password   Generate a new admin password (and turn the "must change" flag on)\n  reset-2fa [client]  Clear the authenticator of the administrator (or a client login); setup is forced again at the next sign-in\n  open-port        Open the panel port to everyone again (undo IP restriction)\n  status           Show panel settings\n  motd [install|remove|quiet|default|status]\n                   SSH login banner (install is automatic; quiet hides the stock Ubuntu greeting, default restores it)');
   process.exit(cmd ? 1 : 0);
 };
 if (!cmd || ['-h', '--help', 'help'].indexOf(cmd) >= 0) usage();
@@ -22,12 +22,18 @@ if (cmd === 'reset-password') {
   const pass = c.rand(8);
   d.admin.hash = c.bcrypt.hashSync(pass, 12); d.admin.mustChange = true; c.bumpSessions(d); c.save(d);
   console.log('Username: ' + d.admin.user + '\nNew password: ' + pass + '\nAll existing panel sessions are signed out (the running panel notices on its next request).');
-} else if (cmd === 'disable-2fa') {
-  d.admin.totp = null; c.bumpSessions(d); c.save(d); console.log('2FA disabled. Existing sessions were signed out.');
+} else if (cmd === 'reset-2fa' || cmd === 'disable-2fa') {
+  // 2FA can never be switched off: this only forgets the old authenticator, so the next sign-in must set up a new one.
+  const who = process.argv[3];
+  if (who) {
+    const u = d.users.find((x) => x.username.toLowerCase() === String(who).toLowerCase());
+    if (!u) { console.error('No client login named ' + who); process.exit(1); }
+    u.totpSecret = null; u.totpLast = 0; u.sv = (u.sv || 1) + 1; c.save(d); console.log('2FA reset for client ' + u.username + '. They sign in with their password and must set up an authenticator.');
+  } else { d.admin.totp = null; d.admin.totpLast = 0; c.bumpSessions(d); c.save(d); console.log('2FA reset for ' + d.admin.user + '. Sign in with your password; you must set up an authenticator app before anything else. Existing sessions were signed out.'); }
 } else if (cmd === 'open-port') {
   const S = require('./lib/sites');
   console.log(S.setDirect([]));
 } else if (cmd === 'status') {
   const st = d.settings;
-  console.log('Version: ' + c.VERSION + '\nAdmin user: ' + d.admin.user + '\n2FA: ' + (d.admin.totp ? 'on' : 'off') + '\nPanel domain: ' + (st.panelDomain || '-') + (st.panelSsl ? ' (SSL)' : '') + '\nDirect IPs: ' + (st.directIps.join(', ') || 'open to all') + '\nSites: ' + d.sites.length + '\nDatabases: ' + d.dbs.length);
+  console.log('Version: ' + c.VERSION + '\nAdmin user: ' + d.admin.user + '\n2FA: ' + (d.admin.totp ? 'set up' : 'NOT set up (required at next sign-in)') + '\nPanel domain: ' + (st.panelDomain || '-') + (st.panelSsl ? ' (SSL)' : '') + '\nDirect IPs: ' + (st.directIps.join(', ') || 'open to all') + '\nSites: ' + d.sites.length + '\nDatabases: ' + d.dbs.length);
 } else usage();

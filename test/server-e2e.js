@@ -45,9 +45,27 @@ function call(method, url, o) {
   });
 }
 const csrfOf = (html) => { const m = /name="_csrf" value="([a-f0-9]+)"|data-csrf="([a-f0-9]+)"/.exec(html); return m && (m[1] || m[2]); };
-async function login(j, user, pass, headers) {
+
+/* ---- authenticator (2FA is mandatory): a tiny TOTP client so the tests sign in exactly like a real user ---- */
+const SECRETS = {};
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const b32dec = (s) => { let bits = ''; for (const ch of s) bits += B32.indexOf(ch).toString(2).padStart(5, '0'); const o = []; for (let i = 0; i + 8 <= bits.length; i += 8) o.push(parseInt(bits.slice(i, i + 8), 2)); return Buffer.from(o); };
+const hotp = (secret, counter) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(counter)); const h = crypto.createHmac('sha1', b32dec(secret)).update(b).digest(); const o = h[19] & 15; return String((((h[o] & 0x7f) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1000000).padStart(6, '0'); };
+const totpNow = (secret) => hotp(secret, Math.floor(Date.now() / 30000));
+const forgetLast = (user) => { const f = BASE + '/data/db.json', db = JSON.parse(fs.readFileSync(f, 'utf8')); if (user === db.admin.user) db.admin.totpLast = 0; else { const u = (db.users || []).find((x) => x.username === user); if (u) u.totpLast = 0; } fs.writeFileSync(f, JSON.stringify(db)); }; // a code may only be used once; tests sign in many times per 30 s
+const codeFor = (user) => { if (!SECRETS[user]) return ''; forgetLast(user); return totpNow(SECRETS[user]); };
+async function enrol(j, user) {
+  const t = csrfOf((await call('GET', '/account', { jar: j })).text);
+  await call('POST', '/account/2fa/start', { jar: j, form: { _csrf: t } });
+  const pg = await call('GET', '/account', { jar: j });
+  const m = /id="tk">([A-Z2-7 ]+)<\/pre>/.exec(pg.text); assert.ok(m, 'setup page shows the key');
+  const secret = m[1].replace(/ /g, '');
+  const r = await call('POST', '/account/2fa/enable', { jar: j, form: { _csrf: csrfOf(pg.text), code: totpNow(secret) } });
+  SECRETS[user] = secret; return r;
+}
+async function login(j, user, pass, headers, code) {
   const page = await call('GET', '/login', { jar: j, headers });
-  const r = await call('POST', '/login', { jar: j, headers, form: { _csrf: csrfOf(page.text), user, pass, code: '' } });
+  const r = await call('POST', '/login', { jar: j, headers, form: { _csrf: csrfOf(page.text), user, pass, code: code === undefined ? codeFor(user) : code } });
   return r;
 }
 const post = async (j, url, form) => { const t = await getCsrf(j); return call('POST', url, { jar: j, form: Object.assign({ _csrf: t }, form) }); };
@@ -97,6 +115,11 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   const pass1 = 'a-much-longer-password-1';
   await post(A, '/account', { cur: pass0, nw: pass1 });
   assert.match((await flashOf(A, '/account')).flash, /Password updated/);
+  // two-factor is mandatory: until the authenticator is set up nothing but the Account page opens
+  r = await call('GET', '/sites', { jar: A }); assert.equal(r.headers.location, '/account', 'pages are closed until 2FA is set up');
+  r = await call('POST', '/backups/site', { jar: A, form: { _csrf: csrfOf((await call('GET', '/account', { jar: A })).text), domain: 'x.example' } }); assert.equal(r.headers.location, '/account', 'actions are closed too');
+  assert.equal((await call('GET', '/logout', { jar: A })).status, 404, 'logout is POST only');
+  r = await enrol(A, 'admin'); assert.match((await flashOf(A, '/account')).flash, /Two-factor authentication is on/);
   assert.ok(!fs.existsSync(CRED), 'credentials file is deleted after the password change (was a bug: missing imports)');
   r = await call('GET', '/account', { jar: A }); assert.equal(r.status, 200, 'the session that changed the password stays signed in');
   r = await call('GET', '/account', { jar: B }); assert.equal(r.status, 302); assert.equal(r.headers.location, '/login', 'other sessions are signed out');
@@ -104,7 +127,7 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /* ---------- username change keeps this session, kills others ---------- */
   const C = jar(); await login(C, 'admin', pass1); assert.equal((await call('GET', '/sites', { jar: C })).status, 200);
-  await post(A, '/account/username', { username: 'boss_user', pass: pass1 });
+  await post(A, '/account/username', { username: 'boss_user', pass: pass1, code: codeFor('admin') }); SECRETS.boss_user = SECRETS.admin;
   assert.match((await flashOf(A, '/account')).flash, /username changed/i);
   assert.equal((await call('GET', '/sites', { jar: A })).status, 200);
   assert.equal((await call('GET', '/sites', { jar: C })).headers.location, '/login');

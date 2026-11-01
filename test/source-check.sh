@@ -25,7 +25,7 @@ node test/nginx-template-smoke.js
 node test/username-validation.js
 bash -n install.sh
 for t in apps-engine apps-handlers apps-download apps-e2e motd v104-units clients-e2e mail-starttls reset-e2e; do grep -q "test/$t.js" package.json; done
-grep -q '"version": "1.0.5"' package.json
+grep -q '"version": "1.0.6"' package.json
 grep -q "app.post('/account/username'" lib/routes/account.js
 grep -q "type === 'static'" lib/sites.js
 grep -q 'site-static.tpl' lib/sites.js
@@ -37,4 +37,7 @@ grep -q "stability=stable" lib/apps/laravel.js
 grep -q 'isStable' lib/apps/wordpress.js
 grep -q 'npm ci --omit=dev --ignore-scripts' install.sh
 grep -q "require('fs')" lib/routes/account.js
+grep -qi "mandatory two-factor" lib/twofa.js
+grep -q 'class="topout"' lib/ui.js
+grep -q "php85: phpTool" lib/tools.js
 echo 'HostPanel source checks passed (syntax and feature markers only).'

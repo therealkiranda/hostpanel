@@ -55,9 +55,26 @@ function call(method, url, o) {
   });
 }
 const csrfOf = (html) => { const m = /name="_csrf" value="([a-f0-9]+)"|data-csrf="([a-f0-9]+)"/.exec(html); return m && (m[1] || m[2]); };
-async function login(j, user, pass, headers) {
+/* ---- authenticator (2FA is mandatory): a tiny TOTP client so the tests sign in exactly like a real user ---- */
+const SECRETS = {};
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const b32dec = (s) => { let bits = ''; for (const ch of s) bits += B32.indexOf(ch).toString(2).padStart(5, '0'); const o = []; for (let i = 0; i + 8 <= bits.length; i += 8) o.push(parseInt(bits.slice(i, i + 8), 2)); return Buffer.from(o); };
+const hotp = (secret, counter) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(counter)); const h = crypto.createHmac('sha1', b32dec(secret)).update(b).digest(); const o = h[19] & 15; return String((((h[o] & 0x7f) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1000000).padStart(6, '0'); };
+const totpNow = (secret) => hotp(secret, Math.floor(Date.now() / 30000));
+const forgetLast = (user) => { const f = BASE + '/data/db.json', db = JSON.parse(fs.readFileSync(f, 'utf8')); if (user === db.admin.user) db.admin.totpLast = 0; else { const u = (db.users || []).find((x) => x.username === user); if (u) u.totpLast = 0; } fs.writeFileSync(f, JSON.stringify(db)); }; // a code may only be used once; tests sign in many times per 30 s
+const codeFor = (user) => { if (!SECRETS[user]) return ''; forgetLast(user); return totpNow(SECRETS[user]); };
+async function enrol(j, user) {
+  const t = csrfOf((await call('GET', '/account', { jar: j })).text);
+  await call('POST', '/account/2fa/start', { jar: j, form: { _csrf: t } });
+  const pg = await call('GET', '/account', { jar: j });
+  const m = /id="tk">([A-Z2-7 ]+)<\/pre>/.exec(pg.text); assert.ok(m, 'setup page shows the key');
+  const secret = m[1].replace(/ /g, '');
+  const r = await call('POST', '/account/2fa/enable', { jar: j, form: { _csrf: csrfOf(pg.text), code: totpNow(secret) } });
+  SECRETS[user] = secret; return r;
+}
+async function login(j, user, pass, headers, code) {
   const page = await call('GET', '/login', { jar: j, headers });
-  const r = await call('POST', '/login', { jar: j, headers, form: { _csrf: csrfOf(page.text), user, pass, code: '' } });
+  const r = await call('POST', '/login', { jar: j, headers, form: { _csrf: csrfOf(page.text), user, pass, code: code === undefined ? codeFor(user) : code } });
   return r;
 }
 const post = async (j, url, form) => { const t = await getCsrf(j); return call('POST', url, { jar: j, form: Object.assign({ _csrf: t }, form) }); };
@@ -81,7 +98,7 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   await start();
   const A = jar();
   const pass0 = /Panel password: (\S+)/.exec(fs.readFileSync(CRED, 'utf8'))[1];
-  await login(A, 'admin', pass0); const pass1 = 'a-much-longer-password-1'; await post(A, '/account', { cur: pass0, nw: pass1 });
+  await login(A, 'admin', pass0); const pass1 = 'a-much-longer-password-1'; await post(A, '/account', { cur: pass0, nw: pass1 }); await enrol(A, 'admin');
   const setDb = (fn) => { const d = JSON.parse(fs.readFileSync(BASE + '/data/db.json', 'utf8')); fn(d); wdb(JSON.stringify(d)); };
   setDb((d) => { d.settings.ip = '203.0.113.5'; });
   const waitMail = async (n) => { for (let i = 0; i < 60 && mails.length < n; i++) await pause(100); assert.ok(mails.length >= n, 'mail #' + n + ' arrived'); return mails[n - 1]; };
@@ -121,7 +138,8 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   pg = await call('GET', url, { jar: K });
   r = await call('POST', '/reset', { jar: K, form: { _csrf: csrfOf(pg.text), token: tok, password: 'Brand-New-Passw0rd', again: 'Brand-New-Passw0rd' } }); assert.equal(r.headers.location, '/login');
   const C = jar(); assert.equal((await login(C, 'kiran', 'Client-Pass-12345')).headers.location, '/login', 'old password no longer works');
-  assert.equal((await login(C, 'kiran', 'Brand-New-Passw0rd')).headers.location, '/'); assert.equal((await call('GET', '/', { jar: C })).status, 200, 'no forced change after a reset the client chose');
+  assert.equal((await login(C, 'kiran', 'Brand-New-Passw0rd')).headers.location, '/'); await enrol(C, 'kiran'); assert.equal((await call('GET', '/', { jar: C })).status, 200, 'no forced change after a reset the client chose');
+  assert.equal((await login(jar(), 'kiran', 'Brand-New-Passw0rd', undefined, '')).headers.location, '/login', 'a reset password alone is not enough: the authenticator code is still required');
   // the link works once only
   pg = await call('GET', url, { jar: jar() }); assert.equal(pg.status, 302); assert.equal(pg.headers.location, '/forgot');
   assert.equal((await call('GET', '/reset?token=' + 'a'.repeat(64), { jar: jar() })).headers.location, '/forgot'); assert.equal((await call('GET', '/reset?token=x', { jar: jar() })).headers.location, '/forgot');

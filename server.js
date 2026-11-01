@@ -1,5 +1,5 @@
 'use strict';
-// HostPanel 1.0.5 - web server and pages.
+// HostPanel 1.0.6 - web server and pages.
 const express = require('express');
 const session = require('express-session');
 const https = require('https');
@@ -18,6 +18,7 @@ const U = require('./lib/users');
 const runtime = require('./lib/runtime');
 const pma = require('./lib/pma');
 const tools = require('./lib/tools');
+const tf = require('./lib/twofa');
 const ui = require('./lib/ui');
 const { createService } = require('./lib/update-service');
 const { P, PORT, IS_ROOT, VERSION, rand, esc, sh, errMsg, safeEq, fmtSize, fmtDate, bcrypt, audit, load, save } = c;
@@ -115,11 +116,13 @@ const auth = (req, res, next) => {
     // client logins: default deny. The page must be on the allowlist AND any website named in the request must be theirs.
     if (!access.customerAllowed(req.method, req.path)) return forbidden(req, res);
     const me = d.users.find((x) => x.id === req.session.uid);
+    if (tf.pending(req, d) && !tf.pendingAllowed(req)) { req.session.flash = { t: 'err', m: 'Set up two-factor authentication to continue.' }; if (req.method === 'PUT') req.resume(); return res.redirect('/account'); }
     if (me && me.mustChange && req.path !== '/account' && req.path !== '/logout') { req.session.flash = { t: 'err', m: 'Please choose a new password first.' }; return res.redirect('/account'); }
     const actor = actorOf(req);
     for (const dom of access.domainsIn(req)) { const s = d.sites.find((x) => x.domain === dom); if (!s || !tenancy.owns(actor, s)) { if (req.method === 'PUT') req.resume(); return res.status(404).send('Not found'); } }
     return next();
   }
+  if (tf.pending(req, d) && !tf.pendingAllowed(req)) { req.session.flash = { t: 'err', m: 'Set up two-factor authentication to continue.' }; if (req.method === 'PUT') req.resume(); return res.redirect('/account'); }
   if (d.admin.mustChange && !req.path.startsWith('/account') && req.path !== '/logout') { req.session.flash = { t: 'err', m: 'Please change the default password first.' }; return res.redirect('/account'); }
   next();
 };
@@ -152,7 +155,7 @@ app.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
   page(req, res, 'Sign in', '<div class="login"><div class="logo">' + ui.svg('logo') + '</div><h1>HostPanel</h1><p class="sub">Sign in to manage your server or website</p><form method="post" action="/login" data-nolock>' + csrf(req) +
     field('Username', '<input name="user" autocomplete="username" required autofocus>') + field('Password', '<input name="pass" type="password" autocomplete="current-password" required>') +
-    field('2FA code', '<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Only if 2FA is enabled">') + '<button>Sign in</button></form><p class="sub"><a href="/forgot">Forgot password?</a></p></div>', { bare: true });
+    field('Authenticator code', '<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6 digits (first sign-in: leave empty)">', 'Two-factor authentication is required. The first time you sign in you will be asked to set it up.') + '<button>Sign in</button></form><p class="sub"><a href="/forgot">Forgot password?</a></p></div>', { bare: true });
 });
 app.post('/login', (req, res) => {
   const ipa = c.cleanIp(req), now = Date.now();
@@ -165,18 +168,19 @@ app.post('/login', (req, res) => {
   if (rec.length >= 5 || (gfails.length >= 25 && !known)) { req.session.flash = { t: 'err', m: 'Too many failed attempts. Try again in 15 minutes.' }; return res.redirect('/login'); }
   const name = String(req.body.user || '');
   const isAdmin = safeEq(name, d.admin.user);
-  let ok, client = null;
-  if (isAdmin) {
-    ok = bcrypt.compareSync(String(req.body.pass || ''), d.admin.hash);
-    if (ok && d.admin.totp) ok = c.totpCheck(d.admin.totp, req.body.code, d);
-  } else { client = U.authenticate(name, req.body.pass); ok = !!client; }
+  let ok, client = null, tfSecret = null, tfRec = null;
+  if (isAdmin) { ok = bcrypt.compareSync(String(req.body.pass || ''), d.admin.hash); tfSecret = d.admin.totp; tfRec = d.admin; }
+  else { client = U.authenticate(name, req.body.pass); ok = !!client; if (client) { tfSecret = client.totpSecret; tfRec = client; } }
+  // Every login must present a valid authenticator code once it has one. A login without one yet is taken straight to
+  // the setup page and can open nothing else (see auth()).
+  if (ok && tfSecret) ok = c.totpCheck(tfSecret, req.body.code, tfRec);
   if (!ok) {
     rec.push(now); gfails.push(now); c.authFail(req, req.body.user); audit(req, 'LOGIN_FAIL', '');
     req.session.flash = { t: 'err', m: 'Invalid credentials' }; return res.redirect('/login');
   }
   fails.delete(ipa);
   if (isAdmin) { d.admin.knownIps = [ipa].concat(d.admin.knownIps.filter((x) => x !== ipa)).slice(0, 20); save(d); }
-  else U.touchLogin(client.id);
+  else U.touchLogin(client.id, tfRec && tfRec.totpLast);
   req.session.regenerate(() => {
     if (isAdmin) { req.session.user = d.admin.user; req.session.role = 'admin'; req.session.sv = d.admin.sv; }
     else { req.session.user = client.username; req.session.role = 'customer'; req.session.uid = client.id; req.session.sv = client.sv; }
@@ -387,7 +391,7 @@ app.get('/files/download', auth, async (req, res) => {
     const s = mySite(req, load(), String(req.query.site || '')), rel = normRel(req.query.p), st = JSON.parse(await fm(s, 'stat', rel));
     if (st.t !== 'f') throw new Error('Not a file');
     const fname = path.posix.basename(rel).replace(/[\r\n"]/g, '_');
-    res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': st.s, 'Content-Disposition': 'attachment; filename="' + fname.replace(/[^\x20-\x7e]/g, '_') + '"; filename*=UTF-8\'\'' + encodeURIComponent(fname), 'Content-Security-Policy': 'sandbox' });
+    res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': st.s, 'Content-Disposition': 'attachment; filename="' + fname.replace(/[^\x20-\x7e]|["\\]/g, '_') + '"; filename*=UTF-8\'\'' + encodeURIComponent(fname), 'Content-Security-Policy': 'sandbox' });
     audit(req, 'FILE_DOWNLOAD', s.domain + ':' + rel);
     const child = spawn(process.execPath, [WORKER, 'cat', s.home, rel, ''], Object.assign({ stdio: ['ignore', 'pipe', 'ignore'] }, fmOpts(s)));
     child.stdout.pipe(res);
@@ -552,7 +556,7 @@ app.get('/account', auth, (req, res, next) => {
   const me = load().users.find((x) => x.id === req.session.uid);
   page(req, res, 'Account', '<div class="card section"><h2>Your account</h2><dl class="kv"><dt>Username</dt><dd class="mono">' + esc(me.username) + '</dd><dt>Email</dt><dd>' + esc(me.email) + '</dd></dl></div>' +
     '<div class="card section"><h2>Change password</h2>' + (me.mustChange ? '<p>' + badge('Required', 'warn') + ' Please choose a new password before you continue.</p>' : '') + '<form method="post" action="/account" data-nolock>' + csrf(req) +
-    '<div class="fgrid">' + field('Current password', '<input type="password" name="current" autocomplete="current-password" required>') + field('New password', '<input type="password" name="password" minlength="12" autocomplete="new-password" required>', 'At least 12 characters.') + field('Repeat new password', '<input type="password" name="again" minlength="12" autocomplete="new-password" required>') + '</div><button>Change password</button></form></div>');
+    '<div class="fgrid">' + field('Current password', '<input type="password" name="current" autocomplete="current-password" required>') + field('New password', '<input type="password" name="password" minlength="12" autocomplete="new-password" required>', 'At least 12 characters.') + field('Repeat new password', '<input type="password" name="again" minlength="12" autocomplete="new-password" required>') + '</div><button>Change password</button></form></div>' + tf.card(req, load()));
 });
 app.post('/account', auth, (req, res, next) => {
   if (!isClient(req)) return next();
@@ -569,7 +573,8 @@ app.post('/account', auth, (req, res, next) => {
   res.redirect(ok ? '/' : '/account');
 });
 /* ================= account routes (extracted module) ================= */
-require('./lib/routes/account')({ app, auth, page, csrf, esc, badge, fbtn, field, rand, c, sys, load, save, bcrypt, wrap, audit });
+require('./lib/routes/account')({ app, auth, page, csrf, esc, badge, fbtn, field, rand, c, sys, load, save, bcrypt, wrap, audit, tf });
+tf.register({ app, auth, load, save, audit, bcrypt, sys, errMsg });
 
 /* ================= fallbacks ================= */
 app.use((req, res) => { if (!req.session.user) return res.status(404).send('Not found'); res.status(404); page(req, res, 'Not found', '<div class="card empty"><h2>404</h2><p>That page does not exist.</p><a class="btn" href="/">Back to dashboard</a></div>'); });

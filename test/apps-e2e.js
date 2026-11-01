@@ -118,7 +118,7 @@ const sh = (f) => fs.readdirSync(f).sort();
   resetSite(); const created = [];
   const S2 = Object.assign(Object.create(S), { createSite: (f, o) => { created.push([f, o]); const d2 = c.load(); d2.sites.push(Object.assign({}, d2.sites[0], { domain: f.domain, type: f.type })); c.save(d2); return 'Site created: ' + f.domain + '\nPassword: secret-sftp'; } });
   const apps2 = mk({ S: S2 });
-  await assert.rejects(() => apps2.start(form({ target: '__new__', domain: 'not a domain' })), /valid domain/); await assert.rejects(() => apps2.start(form({ target: '__new__', domain: 'new.example.org', adminPassword: 'weak' })), /16-200/); assert.equal(created.length, 0, 'invalid input never creates a website');
+  await assert.rejects(() => apps2.start(form({ target: '__new__', domain: 'not a domain' })), /valid domain/); await assert.rejects(() => apps2.start(form({ target: '__new__', domain: 'new.example.org', adminPassword: 'weak' })), /8-200/); assert.equal(created.length, 0, 'invalid input never creates a website');
   let release; const gate = new Promise((r) => { release = r; }); c.runAsync('busy', async () => { await gate; });
   await assert.rejects(() => apps2.start(form({ target: '__new__', domain: 'new.example.org' })), /Another task is running/); assert.equal(created.length, 0, 'no website created while another task runs'); release(); await wait();
   msg = await apps2.start(form({ target: '__new__', domain: 'WWW.New.Example.org', php: '8.3' })); assert.match(msg, /secret-sftp/); assert.match(msg, /installation started/);
