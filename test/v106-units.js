@@ -47,7 +47,7 @@ try {
     const s = t.steps(); assert.equal(s[0][0], 'bash'); assert.ok(s[0][1][1].includes('ppa:ondrej/php') && s[0][1][1].includes('php' + v + '-fpm'), 'PPA only when the distro lacks it');
     const inst = s.find((x) => x[0] === 'apt-get' && x[1].includes('install')); for (const e of ['fpm', 'cli', 'mysql', 'curl', 'gd', 'mbstring', 'xml', 'zip', 'intl', 'bcmath']) assert.ok(inst[1].includes('php' + v + '-' + e), e);
     assert.ok(s.some((x) => x[0] === 'systemctl' && x[1].join(' ') === 'enable --now php' + v + '-fpm'));
-    assert.equal(t.ready(), false, 'not installed here');
+    assert.equal(t.ready(), sys.phpVersions().includes(v), 'ready() follows what is installed on this machine (CI runners ship PHP)');
   }
   assert.equal(sys.defaultPhp(['8.3', '8.4', '8.5']), '8.4'); assert.equal(sys.defaultPhp(['8.3']), '8.3'); assert.equal(sys.defaultPhp(['8.3', '8.5']), '8.5'); assert.equal(sys.defaultPhp([]), '');
   assert.ok(require('../lib/privileged-protocol') && fs.readFileSync(__dirname + '/../lib/privileged-protocol.js', 'utf8').includes('php8.4-fpm') && fs.readFileSync(__dirname + '/../lib/privileged-protocol.js', 'utf8').includes('php8.5-fpm'));
