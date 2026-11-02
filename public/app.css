@@ -1,4 +1,4 @@
-/* HostPanel 1.0.6 - "Aurora" theme. Dark by default, light on request. No inline styles are needed (strict CSP). */
+/* HostPanel 1.0.7 - "Aurora" theme. Dark by default, light on request. No inline styles are needed (strict CSP). */
 :root {
   --bg: #0a0e1f; --bg2: #0f1530; --surface: #141b38; --surface2: #1a2347; --border: #26305c; --hover: #1e2852;
   --text: #e8ebfa; --muted: #8e9ac6; --faint: #5d6896;

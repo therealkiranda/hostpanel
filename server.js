@@ -1,5 +1,5 @@
 'use strict';
-// HostPanel 1.0.6 - web server and pages.
+// HostPanel 1.0.7 - web server and pages.
 const express = require('express');
 const session = require('express-session');
 const https = require('https');

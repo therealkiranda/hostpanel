@@ -44,7 +44,7 @@ try {
   /* PHP 8.4 / 8.5 tools */
   for (const v of ['8.4', '8.5']) {
     const t = tools.TOOLS['php' + v.replace('.', '')]; assert.ok(t, 'tool for PHP ' + v);
-    const s = t.steps(); assert.equal(s[0][0], 'bash'); assert.ok(s[0][1][1].includes('ppa:ondrej/php') && s[0][1][1].includes('php' + v + '-fpm'), 'PPA only when the distro lacks it');
+    const s = t.steps(); assert.equal(s[0][0], 'bash'); assert.ok(s[0][1][1] === tools.PHP_REPO_SH && s[0][1][3] === v && tools.PHP_REPO_SH.includes('ppa:ondrej/php') && tools.PHP_REPO_SH.includes('packages.sury.org') && tools.PHP_REPO_SH.includes('apt-cache show "php$V-fpm"'), 'source chosen by Ubuntu release, only when the distro lacks the version (details: php-repo.js)');
     const inst = s.find((x) => x[0] === 'apt-get' && x[1].includes('install')); for (const e of ['fpm', 'cli', 'mysql', 'curl', 'gd', 'mbstring', 'xml', 'zip', 'intl', 'bcmath']) assert.ok(inst[1].includes('php' + v + '-' + e), e);
     assert.ok(s.some((x) => x[0] === 'systemctl' && x[1].join(' ') === 'enable --now php' + v + '-fpm'));
     assert.equal(t.ready(), sys.phpVersions().includes(v), 'ready() follows what is installed on this machine (CI runners ship PHP)');

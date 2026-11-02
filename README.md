@@ -1,4 +1,4 @@
-# 🚀 HostPanel 1.0.6
+# 🚀 HostPanel 1.0.7
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -232,6 +232,9 @@ sudo bash install.sh
 ## 🧪 Testing & Verification Note
 
 This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
+
+## Version 1.0.7
+- **Installing PHP 8.4 / 8.5 now works on newer Ubuntu releases.** The ondrej PPA has nothing for Ubuntu 26.04, and adding it broke every `apt-get update`. The task now picks the source by Ubuntu release: the Ubuntu archive when it already has the version (PHP 8.5 on 26.04), the ondrej PPA on 22.04 / 24.04, packages.sury.org on newer releases, and it stops without changing anything when no source exists. A leftover ondrej PPA entry from the failed attempt is removed automatically.
 
 ## Version 1.0.6
 - **Two-factor authentication is mandatory** for the administrator and for every client. The first sign-in only opens the Account page until an authenticator app (Google Authenticator, Microsoft Authenticator, Aegis, Authy, 2FAS...) is set up; on a phone, tap *Open in my authenticator app*. Every later sign-in needs the 6-digit code, and a code works only once. There is no "turn 2FA off" button. A new phone: *Account -> Replace my authenticator* (needs password + current code). Lost phone: the administrator resets a client under *Clients -> Manage -> Reset 2FA*; the administrator runs `sudo hostpanel-cli reset-2fa` on the server (it clears the secret, setup is forced again; `sudo hostpanel-cli reset-2fa CLIENTNAME` does the same for a client).
