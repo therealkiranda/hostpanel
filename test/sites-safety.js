@@ -13,6 +13,7 @@ const bin = T + '/bin'; fs.mkdirSync(bin);
 const log = T + '/mysql.log';
 const stub = (n, body) => { fs.writeFileSync(bin + '/' + n, '#!/bin/sh\n' + body + '\n', { mode: 0o755 }); };
 stub('mysql', 'IN=$(cat); echo "$IN" >> "' + log + '"\ncase "$IN" in\n *"SHOW DATABASES"*) [ -f "' + T + '/exists-db" ] && echo found;;\n *"mysql.user"*) [ -f "' + T + '/exists-user" ] && echo found;;\n *"CREATE USER"*) [ -f "' + T + '/fail-create" ] && exit 1;;\nesac\nexit 0');
+stub('mysqldump', 'for a in "$@"; do case "$a" in --result-file=*) f=${a#--result-file=}; printf safety-dump > "$f";; esac; done');
 process.env.PATH = bin + ':' + process.env.PATH;
 fs.mkdirSync(T + '/base/data', { recursive: true }); fs.mkdirSync(T + '/base/backups', { recursive: true }); fs.mkdirSync(T + '/homes');
 const c = require('../lib/core'); const S = require('../lib/sites'); const sys = require('../lib/sys');
@@ -67,6 +68,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   S.restoreBackup(evil, 'ex.com'); j = await wait(); assert.notEqual(j.code, 0); assert.match(j.log, /ARCHIVE REJECTED/);
   assert.equal(fs.readFileSync(home + '/public_html/marker.txt', 'utf8'), 'still here', 'live site untouched when the archive is rejected');
   assert.throws(() => S.restoreBackup('../../etc/passwd', 'x'), /Backup not found/);
+
+  /* ---- database restore validates archive and disk before safety dump/import ---- */
+  let state = c.load(); state.dbs = [{ name: 'shop_db', users: ['shop_db'] }]; c.save(state);
+  const badDb = 'db-shop_db-20200101000000.sql.gz'; fs.writeFileSync(c.P.BACKUPS + '/' + badDb, 'not a gzip archive');
+  fs.writeFileSync(log, '');
+  S.restoreBackup(badDb, 'shop_db'); j = await wait(); assert.notEqual(j.code, 0); assert.match(j.log, /gzip|not in gzip|unexpected end/i);
+  assert.equal(fs.readFileSync(log, 'utf8'), '', 'corrupt SQL archive is rejected before mysql import');
+  assert.ok(!fs.readdirSync(c.P.BACKUPS).some((f) => /^db-shop_db-/.test(f) && f !== badDb), 'corrupt archive is rejected before taking a safety dump');
+
+  stub('df', 'echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/x 100 96 4 96% /"');
+  assert.throws(() => S.restoreBackup(badDb, 'shop_db'), /96% full/);
+  fs.rmSync(bin + '/df');
+
+  /* ---- scheduled backup records success only after the backup job completes ---- */
+  state = c.load(); state.settings.backup = Object.assign({}, state.settings.backup, { enabled: true, hour: new Date().getHours(), keep: 7, remote: '', last: '' }); c.save(state);
+  stub('tar', 'exit 2');
+  S.scheduledBackup(); j = await wait(); assert.notEqual(j.code, 0);
+  assert.equal(c.load().settings.backup.last, '', 'failed scheduled backup remains eligible for retry');
+  fs.rmSync(bin + '/tar');
+  S.scheduledBackup(); j = await wait(); assert.equal(j.code, 0, j.log);
+  const today = new Date(), todayKey = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  assert.equal(c.load().settings.backup.last, todayKey, 'successful scheduled backup marks the day complete');
+  state = c.load(); state.settings.backup.enabled = false; c.save(state);
 
   /* ---- async job runner ---- */
   let release; const gate = new Promise((r) => { release = r; });

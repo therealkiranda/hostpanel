@@ -1,5 +1,5 @@
 'use strict';
-// HostPanel 1.0.9 - web server and pages.
+// HostPanel 1.0.10 - web server and pages.
 const express = require('express');
 const session = require('express-session');
 const https = require('https');
@@ -296,8 +296,14 @@ app.get('/sites/manage', auth, async (req, res) => {
     sel('ownerId', [['system', 'Nobody - administrator only']].concat(d.users.filter((u) => u.active !== false || u.id === s.ownerId).map((u) => [u.id, u.username + ' (' + u.email + ')'])), s.ownerId || 'system') + '<button class="g">Save</button></form><p class="muted">The client signs in with their own login and can only manage this website. Create logins under <a href="/users">Clients</a>.</p></div>';
   const danger = client ? '' : '<div class="card"><h2>Delete website</h2><p class="muted">Removes the site, its Linux user, PHP pool, nginx config and certificate. A final backup is taken first unless you skip it. Databases are kept.</p>' +
     '<form class="row" method="post" action="/sites/delete" data-typeconfirm="' + esc(dom) + '">' + csrf(req) + '<input type="hidden" name="domain" value="' + esc(dom) + '"><input type="hidden" name="confirm" value=""><div class="check"><input type="checkbox" id="sk" name="skipBackup" value="1"><label for="sk">Skip the final backup</label></div><button class="d">Delete ' + esc(dom) + '</button></form></div>';
-  const appRows = (s.apps || []).map((a) => '<li><b>' + esc(a.name) + '</b>' + (a.version ? ' ' + esc(a.version) : '') + ' &middot; ' + (a.url ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener">' + esc(a.url) + '</a>' : esc(a.path || '/')) + (a.adminUrl ? ' &middot; <a href="' + esc(a.adminUrl) + '" target="_blank" rel="noopener">Admin</a>' : '') + (a.db ? ' &middot; database <span class="mono">' + esc(a.db) + '</span>' : '') + '</li>').join('');
-  const installBtns = S.hasPhp(s.type) ? ['wordpress', 'laravel'].filter((a) => (a === 'laravel') === (s.type === 'laravel')).map((a) => '<a class="btn g s" href="/sites/new/' + a + '?' + q({ site: dom }) + '">Install ' + (a === 'laravel' ? 'Laravel' : 'WordPress') + '</a>').join(' ') : '';
+  const fixScheme = (u) => (s.ssl ? String(u).replace(/^http:\/\//, 'https://') : String(u));
+  const appRows = (s.apps || []).map((a) => '<li><b>' + esc(a.name) + '</b>' + (a.version ? ' ' + esc(a.version) : '') + ' &middot; ' + (a.url ? '<a href="' + esc(fixScheme(a.url)) + '" target="_blank" rel="noopener">' + esc(fixScheme(a.url)) + '</a>' : esc(a.path || '/')) + (a.adminUrl ? ' &middot; <a href="' + esc(fixScheme(a.adminUrl)) + '" target="_blank" rel="noopener">Admin</a>' : '') + (a.db ? ' &middot; database <span class="mono">' + esc(a.db) + '</span>' : '') + '</li>').join('');
+  const rootHas = (id) => (s.apps || []).some((a) => a.id === id && !(a.path || ''));
+  const installBtns = S.hasPhp(s.type) ? ['wordpress', 'laravel'].filter((a) => (a === 'laravel') === (s.type === 'laravel')).map((a) => {
+    if (!rootHas(a)) return '<a class=\"btn g s\" href=\"/sites/new/' + a + '?' + q({ site: dom }) + '\">Install ' + (a === 'laravel' ? 'Laravel' : 'WordPress') + '</a>';
+    // Already installed in the site root: never offer the same install again. WordPress may still go into a sub-folder (e.g. /blog).
+    return a === 'wordpress' ? '<a class=\"btn g s\" href=\"/sites/new/wordpress?' + q({ site: dom }) + '\">Install another WordPress in a sub-folder</a>' : '';
+  }).filter(Boolean).join(' ') : '';
   const appsCard = !S.hasPhp(s.type) ? '' : '<div class="card"><h2>Applications</h2>' + (appRows ? '<ul class="plain">' + appRows + '</ul>' : '<p class="muted">No application was installed here with HostPanel.</p>') + '<div class="row-acts">' + installBtns + '</div></div>';
   page(req, res, dom, dnsHtml + '<p><a href="/sites">&larr; All websites</a></p><div class="grid two">' + overview + ssl + appCard + appsCard + phpCard + sftp + clientCard + '</div>' + danger);
 });

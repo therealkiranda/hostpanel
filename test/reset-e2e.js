@@ -24,7 +24,7 @@ const tlsx = require('tls');
 execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2', '-keyout', T + '/smtp.key', '-out', T + '/smtp.crt', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost'], { stdio: 'ignore' });
 const mails = [];
 const smtp = tlsx.createServer({ key: fs.readFileSync(T + '/smtp.key'), cert: fs.readFileSync(T + '/smtp.crt') }, (s) => {
-  let buf = '', data = false, cur = { raw: '' }; s.write('220 fake ESMTP\r\n');
+  let buf = '', data = false, cur = { raw: '' }; s.on('error', () => {}); s.write('220 fake ESMTP\r\n');
   s.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\r\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 2);
     if (data) { if (l === '.') { data = false; mails.push(cur); cur = { raw: '' }; s.write('250 queued\r\n'); } else cur.raw += l + '\n'; continue; }
     if (/^EHLO/.test(l)) s.write('250-fake\r\n250 AUTH PLAIN\r\n'); else if (/^AUTH PLAIN/.test(l)) { cur.auth = Buffer.from(l.slice(11), 'base64').toString('latin1'); s.write('235 ok\r\n'); } else if (/^MAIL FROM/.test(l)) { cur.from = l; s.write('250 ok\r\n'); } else if (/^RCPT TO/.test(l)) { cur.to = l; s.write('250 ok\r\n'); } else if (l === 'DATA') { data = true; s.write('354 go\r\n'); } else if (l === 'QUIT') s.end('221 bye\r\n'); } });

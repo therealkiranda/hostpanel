@@ -27,7 +27,7 @@ node test/nginx-template-smoke.js
 node test/username-validation.js
 bash -n install.sh
 for t in apps-engine apps-handlers apps-download apps-e2e motd v104-units clients-e2e mail-starttls reset-e2e billing-api; do grep -q "test/$t.js" package.json; done
-grep -q '"version": "1.0.9"' package.json
+grep -q '"version": "1.0.10"' package.json
 grep -q "app.post('/account/username'" lib/routes/account.js
 grep -q "type === 'static'" lib/sites.js
 grep -q 'site-static.tpl' lib/sites.js

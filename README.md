@@ -1,4 +1,4 @@
-# 🚀 HostPanel 1.0.9
+# 🚀 HostPanel 1.0.10
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -232,6 +232,10 @@ sudo bash install.sh
 ## 🧪 Testing & Verification Note
 
 This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
+
+## Version 1.0.10
+- **Fix: duplicate "Install WordPress" button.** The website page offered **Install WordPress** (or Laravel) even when it was already installed in the site root. It is now hidden once the application is there; for WordPress the button becomes **Install another WordPress in a sub-folder**. The server-side check that refuses a second install in the same place is unchanged.
+- **Fix: http links on https sites.** Application links (site and Admin) in the Applications card now use `https://` when the site has an active certificate.
 
 ## Version 1.0.9
 - **New interface.** The retro "Ledger" look is gone. HostPanel now uses a modern, neutral design: Geist (bundled, OFL) for text and Geist Mono only for paths, IPs, code and logs; light (`#F8F9FB`) and dark (deep charcoal) themes with one restrained cobalt accent; 12px cards with 1px borders; no gradients, glass or decoration. Compact resource cards on the dashboard, a sidebar with a mobile drawer (Escape and the close button work), a user chip and theme toggle in the top bar, tables that turn into stacked cards on phones, and a centred sign-in card. Every page and dialog uses the same system.
