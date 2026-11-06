@@ -146,13 +146,13 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   assert.equal((await call('GET', '/sites/manage?domain=nope.example', { jar: A })).status, 302);
 
   /* ---------- 1.0.8: design assets, strict CSP, and the Billing API key page ---------- */
-  r = await call('GET', '/fonts/instrument-serif-400.woff', {}); assert.equal(r.status, 200); assert.match(r.headers['content-type'], /font\/woff/); assert.ok(r.text.length > 1000, 'font is served');
-  assert.equal((await call('GET', '/fonts/nope.woff', {})).status, 404); assert.notEqual((await call('GET', '/fonts/../server.js', {})).status, 200);
+  r = await call('GET', '/fonts/geist-latin-wght-normal.woff2', {}); assert.equal(r.status, 200); assert.match(r.headers['content-type'], /font\/woff2/); assert.ok(r.text.length > 1000, 'font is served');
+  assert.equal((await call('GET', '/fonts/nope.woff2', {})).status, 404); assert.notEqual((await call('GET', '/fonts/../server.js', {})).status, 200);
   assert.match(r.headers['content-security-policy'], /font-src 'self'/); assert.match(r.headers['content-security-policy'], /default-src 'none'/);
   const css = (await call('GET', '/app.css', {})).text;
-  assert.ok(/Instrument Serif/.test(css) && /JetBrains Mono/.test(css) && /Instrument Sans/.test(css), 'the type pairing is declared');
-  assert.ok(!/font-family:[^;]*\b(Inter|Roboto|Arial|Fraunces)\b/i.test(css), 'no banned font family'); assert.ok(!/gradient\([^)]*(#7c5cff|violet|indigo|purple)/i.test(css), 'no violet gradient');
-  r = await call('GET', '/login', {}); assert.ok(r.text.includes('class="stage"') && !/ style="/.test(r.text), 'sign-in page uses the asymmetric layout and no inline styles');
+  assert.ok(/"Geist"/.test(css) && /"Geist Mono"/.test(css) && !/Instrument|JetBrains/.test(css), 'the Geist type pairing is declared and the old serif is gone');
+  assert.ok(!/font-family:[^;]*\b(Roboto|Arial|Fraunces)\b/i.test(css), 'no banned font family'); assert.ok(!/gradient\([^)]*(#7c5cff|violet|indigo|purple)/i.test(css), 'no violet gradient');
+  r = await call('GET', '/login', {}); assert.ok(r.text.includes('class="login"') && !/ style="/.test(r.text), 'sign-in page uses the centred card and no inline styles');
   r = await call('GET', '/api-keys', { jar: A }); assert.ok(r.text.includes('/api/v1') && r.text.includes('Connect billing software'));
   assert.ok(!/ style="/.test((await call('GET', '/', { jar: A })).text), 'dashboard has no inline styles (strict CSP)');
   await post(A, '/api-keys/add', { name: 'fossbilling', scopes: 'write', ips: '' });

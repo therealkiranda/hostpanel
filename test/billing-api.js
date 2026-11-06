@@ -97,10 +97,10 @@ async function start() {
   let r = await call('GET', '/api/v1/ping'); assert.equal(r.status, 401); assert.equal(r.json.error.code, 'unauthorized');
   r = await call('GET', '/api/v1/ping', { key: 'hpk_00000000_' + '0'.repeat(48) }); assert.equal(r.status, 401);
   r = await call('GET', '/api/v1/ping', { headers: { Authorization: 'Basic abc' } }); assert.equal(r.status, 401);
-  r = await call('GET', '/api/v1/ping', { key: RW }); assert.equal(r.status, 200); assert.equal(r.json.version, '1.0.8'); assert.equal(r.json.key, 'billing');
+  r = await call('GET', '/api/v1/ping', { key: RW }); assert.equal(r.status, 200); assert.equal(r.json.version, '1.0.9'); assert.equal(r.json.key, 'billing');
   assert.ok(!r.headers['set-cookie'], 'API calls never create a session cookie');
   assert.match(r.headers['content-type'], /application\/json/);
-  r = await call('GET', '/api/v1/openapi.json'); assert.equal(r.status, 200); assert.equal(r.json.openapi, '3.1.0'); assert.equal(r.json.info.version, '1.0.8'); assert.ok(r.json.paths['/api/v1/services']);
+  r = await call('GET', '/api/v1/openapi.json'); assert.equal(r.status, 200); assert.equal(r.json.openapi, '3.1.0'); assert.equal(r.json.info.version, '1.0.9'); assert.ok(r.json.paths['/api/v1/services']);
   r = await call('GET', '/api/v2/ping', { key: RW }); assert.equal(r.status, 404);
   r = await call('GET', '/api/v1/nope', { key: RW }); assert.equal(r.status, 404);
   r = await call('DELETE', '/api/v1/ping', { key: RW }); assert.equal(r.status, 405);

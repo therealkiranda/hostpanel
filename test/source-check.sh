@@ -27,7 +27,7 @@ node test/nginx-template-smoke.js
 node test/username-validation.js
 bash -n install.sh
 for t in apps-engine apps-handlers apps-download apps-e2e motd v104-units clients-e2e mail-starttls reset-e2e billing-api; do grep -q "test/$t.js" package.json; done
-grep -q '"version": "1.0.8"' package.json
+grep -q '"version": "1.0.9"' package.json
 grep -q "app.post('/account/username'" lib/routes/account.js
 grep -q "type === 'static'" lib/sites.js
 grep -q 'site-static.tpl' lib/sites.js
@@ -47,9 +47,9 @@ echo 'HostPanel source checks passed (syntax and feature markers only).'
 grep -q "require('./lib/routes/api')" server.js
 grep -q "font-src 'self'" server.js
 grep -q 'SUSPENDED_BODY' lib/sites.js
-test -s public/fonts/instrument-serif-400.woff
+test -s public/fonts/geist-latin-wght-normal.woff2
 test -s public/fonts/LICENSES.txt
 # the design rules: none of the banned families or gradients may creep back into the shipped stylesheet
-! grep -Eqi 'font-family:[^;]*\b(Inter|Roboto|Arial|Fraunces)\b' public/app.css
+! grep -Eqi 'font-family:[^;]*\b(Roboto|Arial|Fraunces|Instrument)\b' public/app.css
 ! grep -Eqi 'linear-gradient\([^)]*(#7c5cff|#8b5cf6|violet|indigo|purple)' public/app.css
 ! grep -q 'box-shadow:[^;]*,' public/app.css

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HostPanel 1.0.8 installer - Ubuntu 22.04 / 24.04 / 26.04.
+# HostPanel 1.0.9 installer - Ubuntu 22.04 / 24.04 / 26.04.
 # Run from the unzipped folder:  sudo bash install.sh
 # Safe to run again: it upgrades the panel and keeps your data, sites and databases.
 set -euo pipefail

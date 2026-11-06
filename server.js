@@ -1,5 +1,5 @@
 'use strict';
-// HostPanel 1.0.8 - web server and pages.
+// HostPanel 1.0.9 - web server and pages.
 const express = require('express');
 const session = require('express-session');
 const https = require('https');
@@ -22,7 +22,7 @@ const tf = require('./lib/twofa');
 const ui = require('./lib/ui');
 const { createService } = require('./lib/update-service');
 const { P, PORT, IS_ROOT, VERSION, rand, esc, sh, errMsg, safeEq, fmtSize, fmtDate, bcrypt, audit, load, save } = c;
-const { layout, csrf, q, fbtn, badge, meter, stat, field, sel, table } = ui;
+const { layout, csrf, q, fbtn, badge, meter, stat, field, sel, table, svg } = ui;
 
 const BASE = P.BASE;
 const MAX_UPLOAD = 1024 * 1024 * 1024;
@@ -44,7 +44,7 @@ const app = express();
 app.disable('x-powered-by');
 const ASSET = {};
 ['app.css:text/css', 'app.js:application/javascript'].forEach((x) => { const [n, t] = x.split(':'); ASSET['/' + n] = { t, b: fs.readFileSync(path.join(__dirname, 'public', n)) }; });
-fs.readdirSync(path.join(__dirname, 'public', 'fonts')).filter((n) => /^[a-z0-9-]+\.woff$/.test(n)).forEach((n) => { ASSET['/fonts/' + n] = { t: 'font/woff', b: fs.readFileSync(path.join(__dirname, 'public', 'fonts', n)) }; });
+fs.readdirSync(path.join(__dirname, 'public', 'fonts')).filter((n) => /^[a-z0-9-]+\.woff2$/.test(n)).forEach((n) => { ASSET['/fonts/' + n] = { t: 'font/woff2', b: fs.readFileSync(path.join(__dirname, 'public', 'fonts', n)) }; });
 ASSET['/favicon.svg'] = { t: 'image/svg+xml', b: Buffer.from(ui.FAVICON) };
 
 const hits = new Map();
@@ -159,14 +159,11 @@ const fails = new Map(); let gfails = [];
 c.every(300000, () => { const t = Date.now(); for (const [k, v] of fails) { const f = v.filter((x) => t - x < 900000); if (f.length) fails.set(k, f); else fails.delete(k); } });
 app.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
-  page(req, res, 'Sign in', '<section class="stage"><div><h1>Host<em>Panel</em></h1><p class="lede">One server, its websites, databases, backups and clients. Nothing else.</p>' +
-    '<svg class="rack" viewBox="0 0 440 190" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="2" width="436" height="54"/><rect x="2" y="68" width="436" height="54"/><rect x="2" y="134" width="436" height="54"/>' +
-    '<g stroke-width="1.5"><path d="M120 18v22M136 18v22M152 18v22M168 18v22M184 18v22"/><path d="M120 84v22M136 84v22M152 84v22M168 84v22M184 84v22"/><path d="M120 150v22M136 150v22M152 150v22M168 150v22M184 150v22"/></g>' +
-    '<circle class="led" cx="28" cy="29" r="6"/><rect x="22" y="89" width="12" height="12" fill="currentColor"/><rect x="22" y="155" width="12" height="12" fill="currentColor"/><path d="M300 29h110M300 95h110M300 161h60"/></svg></div>' +
-    '<div class="facts"><span>v' + VERSION + '</span><span>HTTPS only</span><span>2FA required</span></div></section>' +
-    '<div class="login"><h2>Sign in</h2><p class="sub">Manage your server or website.</p><form method="post" action="/login" data-nolock>' + csrf(req) +
+  page(req, res, 'Sign in', '<div class="login"><div class="logo">' + svg('logo') + '</div><h1>Sign in to HostPanel</h1><p class="sub">Manage your server and websites.</p>' +
+    '<form method="post" action="/login" data-nolock>' + csrf(req) +
     field('Username', '<input name="user" autocomplete="username" required autofocus>') + field('Password', '<input name="pass" type="password" autocomplete="current-password" required>') +
-    field('Authenticator code', '<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6 digits (first sign-in: leave empty)">', 'Two-factor authentication is required. The first time you sign in you will be asked to set it up.') + '<button>Sign in</button></form><p class="sub"><a href="/forgot">Forgot password?</a></p></div>', { bare: true });
+    field('Authenticator code', '<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6 digits (first sign-in: leave empty)">', 'Two-factor authentication is required. The first time you sign in you will be asked to set it up.') + '<button>Sign in</button></form><p class="sub"><a href="/forgot">Forgot password?</a></p></div>' +
+    '<div class="facts"><span>v' + VERSION + '</span><span>HTTPS only</span><span>2FA required</span></div>', { bare: true });
 });
 app.post('/login', (req, res) => {
   const ipa = c.cleanIp(req), now = Date.now();
@@ -224,15 +221,15 @@ app.get('/', auth, (req, res) => {
   const svcs = sys.serviceDefs().map((x) => '<span class="badge ' + (sv[x.n] ? 'ok' : 'err') + '"><i class="dot"></i>' + esc(x.n.replace('.timer', '')) + '</span>').join(' ');
   const score = sec ? Math.round((sec.filter((x) => x.ok).length / sec.length) * 100) : null;
   const hero = '<div class="masthead"><h2>Welcome back, <em>' + esc(d.admin.user) + '</em></h2><p>Panel address: <span class="mono">' + esc(panelUrl) + '</span>' + (viaDomain(req) ? ' &middot; secured with Let\'s Encrypt' : '') + '</p></div>';
-  const row = (k, sub, pct) => '<li><div class="k">' + k + '<small>' + esc(sub) + '</small></div><div class="ticks' + (pct >= 90 ? ' hot' : '') + '" data-p="' + pct + '" role="img" aria-label="' + pct + ' percent"></div><div class="v"><span class="n">' + pct + '<sup>%</sup></span></div></li>';
+  const card = (k, val, sub, pct) => '<li><span class="k">' + k + '</span><div class="v"><span class="n' + (val.length > 9 ? ' txt' : '') + '">' + val + '</span></div><span class="sub">' + esc(sub) + '</span>' + (pct === null ? '' : '<div class="ticks' + (pct >= 90 ? ' hot' : pct >= 75 ? ' warm' : '') + '" data-p="' + pct + '" role="img" aria-label="' + pct + ' percent used"></div>') + '</li>';
   const inv = (href, label, n, cls) => '<li><a href="' + href + '">' + label + '</a><span class="n ' + (cls || '') + '">' + n + '</span></li>';
   page(req, res, 'Dashboard', hero +
-    '<div class="cols"><div class="c8"><h3>Server</h3><ul class="ledger">' + row('CPU load', st.load.split(' / ')[0] + ' now, ' + st.cores + ' cores', cpu) + row('Memory', st.ram, st.ramPct) + row('Disk', st.disk, st.diskPct) +
-    '<li><div class="k">Uptime</div><div></div><div class="v">' + esc(st.uptime) + '</div></li></ul></div>' +
-    '<div class="c4"><h3>Inventory</h3><ul class="inv">' + inv('/sites', 'Websites', d.sites.length) + inv('/databases', 'Databases', d.dbs.length) +
+    '<ul class="ledger">' + card('CPU load', cpu + '<sup>%</sup>', st.load.split(' / ')[0] + ' load, ' + st.cores + ' cores', cpu) + card('Memory', st.ramPct + '<sup>%</sup>', st.ram, st.ramPct) + card('Disk', st.diskPct + '<sup>%</sup>', st.disk, st.diskPct) +
+    card('Uptime', esc(st.uptime), 'Since last boot', null) + '</ul>' +
+    '<ul class="inv">' + inv('/sites', 'Websites', d.sites.length) + inv('/databases', 'Databases', d.dbs.length) +
     inv('/updates', 'Updates', up ? (up.count ? up.count + '<small>pending</small>' : '0') : '&hellip;', up && up.count ? 'warn' : '') +
-    inv('/security', 'Security score', score === null ? '&hellip;' : score + '<small>%</small>', score !== null && score < 80 ? 'warn' : '') + '</ul></div></div>' +
-    '<div class="sec-h"><h2>Services</h2></div><p class="svc-list">' + svcs + '</p>');
+    inv('/security', 'Security score', score === null ? '&hellip;' : score + '<small>%</small>', score !== null && score < 80 ? 'warn' : '') + '</ul>' +
+    '<div class="sec-h"><h2>Services</h2></div><div class="card svc-list">' + svcs + '</div>');
 });
 
 /* ================= websites ================= */

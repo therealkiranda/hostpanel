@@ -1,4 +1,4 @@
-# 🚀 HostPanel 1.0.8
+# 🚀 HostPanel 1.0.9
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -232,6 +232,11 @@ sudo bash install.sh
 ## 🧪 Testing & Verification Note
 
 This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
+
+## Version 1.0.9
+- **New interface.** The retro "Ledger" look is gone. HostPanel now uses a modern, neutral design: Geist (bundled, OFL) for text and Geist Mono only for paths, IPs, code and logs; light (`#F8F9FB`) and dark (deep charcoal) themes with one restrained cobalt accent; 12px cards with 1px borders; no gradients, glass or decoration. Compact resource cards on the dashboard, a sidebar with a mobile drawer (Escape and the close button work), a user chip and theme toggle in the top bar, tables that turn into stacked cards on phones, and a centred sign-in card. Every page and dialog uses the same system.
+- Nothing functional changed: routes, forms, sessions, CSRF, permissions and the Content Security Policy are untouched. Fonts are now served as `woff2` only.
+- Release note for updating: the in-panel updater needs a strict `X.Y.Z` tag, so this ships as `v1.0.9` (not `1.0.8+1`).
 
 ## Version 1.0.8
 - **Billing API (`/api/v1`).** Free and open-source billing software (FOSSBilling, Paymenter, your own scripts) can now provision hosting: create a service (client login + website), suspend and unsuspend, change password, reset the SFTP password, change plan, read disk usage and terminate. Keys are created under **Billing API** in the panel, shown once, stored only as a hash, scoped `read` / `write`, and can be limited to the billing server's IP. Creating a service is safe to retry (same `domain` + `externalId`), failed requests leave nothing behind, and secrets never reach the audit log. Full reference: `docs/BILLING-API.md`; machine-readable spec at `/api/v1/openapi.json`.

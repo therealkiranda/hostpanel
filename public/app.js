@@ -15,13 +15,15 @@
       var cur = root.getAttribute('data-theme') || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       var next = cur === 'light' ? 'dark' : 'light';
       root.setAttribute('data-theme', next); try { localStorage.setItem('hp-theme', next); } catch (x) {}
-    } else if (a === 'menu') { var s = $('.side'); if (s) s.classList.toggle('open'); }
+    } else if (a === 'menu') { var s = $('.side'); if (s) { var o = s.classList.toggle('open'); t.setAttribute('aria-expanded', o ? 'true' : 'false'); t.setAttribute('aria-label', o ? 'Close menu' : 'Open menu'); } }
     else if (a === 'copy') {
       var el = $(t.getAttribute('data-target')), txt = el ? el.textContent : '';
       if (navigator.clipboard) navigator.clipboard.writeText(txt).then(function () { t.textContent = 'Copied'; setTimeout(function () { t.textContent = 'Copy'; }, 1500); });
     }
   });
-  d.addEventListener('click', function (e) { if (e.target.closest && !e.target.closest('.side') && !e.target.closest('[data-act=menu]')) { var s = $('.side.open'); if (s) s.classList.remove('open'); } });
+  function closeMenu() { var s = $('.side.open'); if (s) { s.classList.remove('open'); var m = $('#menu'); if (m) { m.setAttribute('aria-expanded', 'false'); m.setAttribute('aria-label', 'Open menu'); } } }
+  d.addEventListener('click', function (e) { if (e.target.closest && !e.target.closest('.side') && !e.target.closest('[data-act=menu]')) closeMenu(); });
+  d.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !d.body.classList.contains('dlg-open')) closeMenu(); });
 
   // meters (CSP blocks style="" attributes, but setting styles from script is allowed)
   $$('[data-w]').forEach(function (el) { var v = Math.max(0, Math.min(100, parseFloat(el.getAttribute('data-w')) || 0)); requestAnimationFrame(function () { el.style.width = v + '%'; }); });

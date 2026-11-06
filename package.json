@@ -1,6 +1,6 @@
 {
   "name": "hostpanel",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "description": "HostPanel - lightweight hosting control panel for Ubuntu + Nginx + PHP-FPM + MariaDB",
   "main": "server.js",

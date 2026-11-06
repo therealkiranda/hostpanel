@@ -1,8 +1,7 @@
-Fonts bundled with HostPanel (subset to Latin, converted to WOFF). Each is licensed under the SIL Open Font License 1.1, copied below.
+Fonts bundled with HostPanel (Latin subset, variable weight, WOFF2; from the Fontsource packages @fontsource-variable/geist and @fontsource-variable/geist-mono). Both are licensed under the SIL Open Font License 1.1, copied below.
 
-  Instrument Serif   Copyright 2022 The Instrument Serif Project Authors (https://github.com/Instrument/instrument-serif)
-  Instrument Sans    Copyright 2022 The Instrument Sans Project Authors (https://github.com/Instrument/instrument-sans)
-  JetBrains Mono     Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+  Geist        Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)
+  Geist Mono   Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)
 
 -----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
