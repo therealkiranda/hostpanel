@@ -12,7 +12,7 @@
     if (!t) return;
     var a = t.getAttribute('data-act');
     if (a === 'theme') {
-      var cur = root.getAttribute('data-theme') || (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      var cur = root.getAttribute('data-theme') || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       var next = cur === 'light' ? 'dark' : 'light';
       root.setAttribute('data-theme', next); try { localStorage.setItem('hp-theme', next); } catch (x) {}
     } else if (a === 'menu') { var s = $('.side'); if (s) s.classList.toggle('open'); }

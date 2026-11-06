@@ -1,5 +1,5 @@
 'use strict';
-// HostPanel 1.0.7 - web server and pages.
+// HostPanel 1.0.8 - web server and pages.
 const express = require('express');
 const session = require('express-session');
 const https = require('https');
@@ -44,6 +44,7 @@ const app = express();
 app.disable('x-powered-by');
 const ASSET = {};
 ['app.css:text/css', 'app.js:application/javascript'].forEach((x) => { const [n, t] = x.split(':'); ASSET['/' + n] = { t, b: fs.readFileSync(path.join(__dirname, 'public', n)) }; });
+fs.readdirSync(path.join(__dirname, 'public', 'fonts')).filter((n) => /^[a-z0-9-]+\.woff$/.test(n)).forEach((n) => { ASSET['/fonts/' + n] = { t: 'font/woff', b: fs.readFileSync(path.join(__dirname, 'public', 'fonts', n)) }; });
 ASSET['/favicon.svg'] = { t: 'image/svg+xml', b: Buffer.from(ui.FAVICON) };
 
 const hits = new Map();
@@ -54,7 +55,7 @@ app.use((req, res, next) => {
     'Strict-Transport-Security': 'max-age=31536000', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
     // No inline scripts and no inline styles anywhere: meters are drawn from data- attributes by app.js.
-    'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+    'Content-Security-Policy': "default-src 'none'; style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
   });
   const k = c.cleanIp(req), t = Date.now();
   let h = hits.get(k);
@@ -68,6 +69,10 @@ app.use((req, res, next) => {
   if (!a || req.method !== 'GET') return next();
   res.set('Cache-Control', 'public, max-age=3600').type(a.t).send(a.b);
 });
+
+// Billing API (/api/v1): bearer-key authenticated, no cookies, no CSRF. Mounted before the session layer on purpose.
+const billing = require('./lib/billing').createBilling({ c, S, U, sys, runtime, tools });
+require('./lib/routes/api')(app, { c, billing });
 
 const store = new c.PruneStore();
 app.use(session({
@@ -120,6 +125,7 @@ const auth = (req, res, next) => {
     if (me && me.mustChange && req.path !== '/account' && req.path !== '/logout') { req.session.flash = { t: 'err', m: 'Please choose a new password first.' }; return res.redirect('/account'); }
     const actor = actorOf(req);
     for (const dom of access.domainsIn(req)) { const s = d.sites.find((x) => x.domain === dom); if (!s || !tenancy.owns(actor, s)) { if (req.method === 'PUT') req.resume(); return res.status(404).send('Not found'); } }
+    for (const dom of access.domainsIn(req)) { const s = d.sites.find((x) => x.domain === dom); if (s && s.suspended) { if (req.method === 'PUT') req.resume(); req.session.flash = { t: 'err', m: dom + ' is suspended. Please contact your provider.' }; return req.method === 'GET' ? res.redirect('/sites') : res.status(403).send('Suspended'); } }
     return next();
   }
   if (tf.pending(req, d) && !tf.pendingAllowed(req)) { req.session.flash = { t: 'err', m: 'Set up two-factor authentication to continue.' }; if (req.method === 'PUT') req.resume(); return res.redirect('/account'); }
@@ -153,7 +159,12 @@ const fails = new Map(); let gfails = [];
 c.every(300000, () => { const t = Date.now(); for (const [k, v] of fails) { const f = v.filter((x) => t - x < 900000); if (f.length) fails.set(k, f); else fails.delete(k); } });
 app.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
-  page(req, res, 'Sign in', '<div class="login"><div class="logo">' + ui.svg('logo') + '</div><h1>HostPanel</h1><p class="sub">Sign in to manage your server or website</p><form method="post" action="/login" data-nolock>' + csrf(req) +
+  page(req, res, 'Sign in', '<section class="stage"><div><h1>Host<em>Panel</em></h1><p class="lede">One server, its websites, databases, backups and clients. Nothing else.</p>' +
+    '<svg class="rack" viewBox="0 0 440 190" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="2" width="436" height="54"/><rect x="2" y="68" width="436" height="54"/><rect x="2" y="134" width="436" height="54"/>' +
+    '<g stroke-width="1.5"><path d="M120 18v22M136 18v22M152 18v22M168 18v22M184 18v22"/><path d="M120 84v22M136 84v22M152 84v22M168 84v22M184 84v22"/><path d="M120 150v22M136 150v22M152 150v22M168 150v22M184 150v22"/></g>' +
+    '<circle class="led" cx="28" cy="29" r="6"/><rect x="22" y="89" width="12" height="12" fill="currentColor"/><rect x="22" y="155" width="12" height="12" fill="currentColor"/><path d="M300 29h110M300 95h110M300 161h60"/></svg></div>' +
+    '<div class="facts"><span>v' + VERSION + '</span><span>HTTPS only</span><span>2FA required</span></div></section>' +
+    '<div class="login"><h2>Sign in</h2><p class="sub">Manage your server or website.</p><form method="post" action="/login" data-nolock>' + csrf(req) +
     field('Username', '<input name="user" autocomplete="username" required autofocus>') + field('Password', '<input name="pass" type="password" autocomplete="current-password" required>') +
     field('Authenticator code', '<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6 digits (first sign-in: leave empty)">', 'Two-factor authentication is required. The first time you sign in you will be asked to set it up.') + '<button>Sign in</button></form><p class="sub"><a href="/forgot">Forgot password?</a></p></div>', { bare: true });
 });
@@ -198,27 +209,30 @@ const sslBadge = (s) => {
   const dd = sys.certDays(s.domain);
   return badge('SSL' + (dd === null ? '' : ' - ' + dd + 'd'), dd !== null && dd < 14 ? 'err' : 'ok');
 };
-const typeBadge = (s) => badge(s.type === 'proxy' ? 'Proxy :' + s.port : s.type === 'static' ? 'Static HTML' : s.type === 'laravel' ? 'Laravel' : s.type === 'node' ? 'Node.js :' + s.port : s.type === 'python' ? 'Python :' + s.port : 'PHP ' + s.php);
+const typeBadge = (s) => (s.suspended ? badge('Suspended', 'err') + ' ' : '') + badge(s.type === 'proxy' ? 'Proxy :' + s.port : s.type === 'static' ? 'Static HTML' : s.type === 'laravel' ? 'Laravel' : s.type === 'node' ? 'Node.js :' + s.port : s.type === 'python' ? 'Python :' + s.port : 'PHP ' + s.php);
 app.get('/', auth, (req, res) => {
   const d = load();
   if (isClient(req)) {
     const mine = mySites(req, d), myDbs = d.dbs.filter((x) => mine.some((s) => s.domain === x.site));
-    const cards = mine.map((s) => '<a class="card" href="/sites/manage?' + q({ domain: s.domain }) + '"><small>' + esc(s.domain) + '</small><div class="big">' + typeBadge(s) + '</div><p>' + sslBadge(s) + '</p></a>').join('');
-    return page(req, res, 'Dashboard', '<div class="hero"><h2>Welcome, ' + esc(req.session.user) + '</h2><p>You manage ' + mine.length + ' website' + (mine.length === 1 ? '' : 's') + ' and ' + myDbs.length + ' database' + (myDbs.length === 1 ? '' : 's') + '.</p></div>' +
-      (mine.length ? '<div class="grid">' + cards + '</div>' : '<div class="card empty">No website is assigned to your login yet. Please contact your administrator.</div>'));
+    const rows = mine.map((s) => '<li><a class="dom" href="/sites/manage?' + q({ domain: s.domain }) + '">' + esc(s.domain) + '</a><span>' + typeBadge(s) + ' ' + sslBadge(s) + '</span></li>').join('');
+    return page(req, res, 'Dashboard', '<div class="masthead"><h2>Welcome, <em>' + esc(req.session.user) + '</em></h2><p>You manage ' + mine.length + ' website' + (mine.length === 1 ? '' : 's') + ' and ' + myDbs.length + ' database' + (myDbs.length === 1 ? '' : 's') + '.</p></div>' +
+      (mine.length ? '<ul class="inv rows">' + rows + '</ul>' : '<div class="card empty">No website is assigned to your login yet. Please contact your administrator.</div>'));
   }
   const st = sys.stats(), sv = sys.svcStates(), up = sys.updatesPeek(), sec = sys.securityPeek();
   const cpu = Math.min(100, Math.round((parseFloat(st.load) / st.cores) * 100));
   const panelUrl = d.settings.panelSsl && d.settings.panelDomain ? 'https://' + d.settings.panelDomain : 'https://' + (d.settings.ip || 'SERVER-IP') + ':' + PORT;
   const svcs = sys.serviceDefs().map((x) => '<span class="badge ' + (sv[x.n] ? 'ok' : 'err') + '"><i class="dot"></i>' + esc(x.n.replace('.timer', '')) + '</span>').join(' ');
   const score = sec ? Math.round((sec.filter((x) => x.ok).length / sec.length) * 100) : null;
-  const hero = '<div class="hero"><h2>Welcome back, ' + esc(d.admin.user) + '</h2><p>Panel address: <span class="mono">' + esc(panelUrl) + '</span>' + (viaDomain(req) ? ' &middot; secured with Let\'s Encrypt' : '') + '</p></div>';
+  const hero = '<div class="masthead"><h2>Welcome back, <em>' + esc(d.admin.user) + '</em></h2><p>Panel address: <span class="mono">' + esc(panelUrl) + '</span>' + (viaDomain(req) ? ' &middot; secured with Let\'s Encrypt' : '') + '</p></div>';
+  const row = (k, sub, pct) => '<li><div class="k">' + k + '<small>' + esc(sub) + '</small></div><div class="ticks' + (pct >= 90 ? ' hot' : '') + '" data-p="' + pct + '" role="img" aria-label="' + pct + ' percent"></div><div class="v"><span class="n">' + pct + '<sup>%</sup></span></div></li>';
+  const inv = (href, label, n, cls) => '<li><a href="' + href + '">' + label + '</a><span class="n ' + (cls || '') + '">' + n + '</span></li>';
   page(req, res, 'Dashboard', hero +
-    '<div class="grid">' + meter('CPU load (' + st.cores + ' cores)', st.load.split(' / ')[0] + ' now', cpu) + meter('Memory', st.ram, st.ramPct) + meter('Disk', st.disk, st.diskPct) + stat('Uptime', st.uptime) + '</div>' +
-    '<div class="grid">' + '<a class="card" href="/sites"><small>Websites</small><div class="big">' + d.sites.length + '</div></a><a class="card" href="/databases"><small>Databases</small><div class="big">' + d.dbs.length + '</div></a>' +
-    '<a class="card" href="/updates"><small>Updates</small><div class="big ' + (up && up.count ? 'warn' : 'on') + '">' + (up ? (up.count ? up.count + ' pending' : 'Up to date') : 'Checking...') + '</div></a>' +
-    '<a class="card" href="/security"><small>Security score</small><div class="big ' + (score === null ? '' : score >= 80 ? 'on' : 'warn') + '">' + (score === null ? 'Checking...' : score + '%') + '</div></a></div>' +
-    '<div class="card"><h2>Services</h2><p>' + svcs + '</p></div>');
+    '<div class="cols"><div class="c8"><h3>Server</h3><ul class="ledger">' + row('CPU load', st.load.split(' / ')[0] + ' now, ' + st.cores + ' cores', cpu) + row('Memory', st.ram, st.ramPct) + row('Disk', st.disk, st.diskPct) +
+    '<li><div class="k">Uptime</div><div></div><div class="v">' + esc(st.uptime) + '</div></li></ul></div>' +
+    '<div class="c4"><h3>Inventory</h3><ul class="inv">' + inv('/sites', 'Websites', d.sites.length) + inv('/databases', 'Databases', d.dbs.length) +
+    inv('/updates', 'Updates', up ? (up.count ? up.count + '<small>pending</small>' : '0') : '&hellip;', up && up.count ? 'warn' : '') +
+    inv('/security', 'Security score', score === null ? '&hellip;' : score + '<small>%</small>', score !== null && score < 80 ? 'warn' : '') + '</ul></div></div>' +
+    '<div class="sec-h"><h2>Services</h2></div><p class="svc-list">' + svcs + '</p>');
 });
 
 /* ================= websites ================= */
@@ -548,6 +562,7 @@ const ctx = { app, auth, page, csrf, esc, badge, fbtn, field, sel, table, q, c, 
 require('./lib/routes/wizard')(ctx);
 require('./lib/routes/databases')(ctx);
 require('./lib/routes/users')(ctx);
+require('./lib/routes/apikeys')(Object.assign({ billing }, ctx));
 mailCardFn = require('./lib/routes/reset')(Object.assign({ ui, bcrypt }, ctx)).mailCard;
 
 /* ================= account (a client only changes their own password) ================= */

@@ -140,10 +140,29 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   const db = JSON.parse(fs.readFileSync(BASE + '/data/db.json', 'utf8'));
   db.sites.push({ domain: 'example.com', type: 'static', user: 'tester', home, root: home + '/public_html', docroot: home + '/public_html', created: new Date().toISOString(), ssl: false, certNames: [], cfg: {}, autoSsl: false });
   wdb(JSON.stringify(db));
-  for (const p of ['/', '/sites/new', '/sites/new/wordpress', '/sites/new/laravel', '/sites/new/node', '/sites/new/php', '/sites/new/static', '/sites/new/python', '/sites/new/proxy', '/users', '/sites', '/sites/manage?domain=example.com', '/files', '/files?site=example.com&p=/public_html', '/databases', '/backups', '/cron', '/services', '/tasks', '/security', '/updates', '/audit', '/settings', '/account', '/logs?site=example.com&type=error']) {
+  for (const p of ['/', '/sites/new', '/sites/new/wordpress', '/sites/new/laravel', '/sites/new/node', '/sites/new/php', '/sites/new/static', '/sites/new/python', '/sites/new/proxy', '/users', '/sites', '/sites/manage?domain=example.com', '/files', '/files?site=example.com&p=/public_html', '/databases', '/backups', '/cron', '/services', '/tasks', '/security', '/updates', '/audit', '/api-keys', '/settings', '/account', '/logs?site=example.com&type=error']) {
     r = await call('GET', p, { jar: A }); assert.equal(r.status, 200, p + ' -> ' + r.status + ' ' + r.text.slice(0, 200));
   }
   assert.equal((await call('GET', '/sites/manage?domain=nope.example', { jar: A })).status, 302);
+
+  /* ---------- 1.0.8: design assets, strict CSP, and the Billing API key page ---------- */
+  r = await call('GET', '/fonts/instrument-serif-400.woff', {}); assert.equal(r.status, 200); assert.match(r.headers['content-type'], /font\/woff/); assert.ok(r.text.length > 1000, 'font is served');
+  assert.equal((await call('GET', '/fonts/nope.woff', {})).status, 404); assert.notEqual((await call('GET', '/fonts/../server.js', {})).status, 200);
+  assert.match(r.headers['content-security-policy'], /font-src 'self'/); assert.match(r.headers['content-security-policy'], /default-src 'none'/);
+  const css = (await call('GET', '/app.css', {})).text;
+  assert.ok(/Instrument Serif/.test(css) && /JetBrains Mono/.test(css) && /Instrument Sans/.test(css), 'the type pairing is declared');
+  assert.ok(!/font-family:[^;]*\b(Inter|Roboto|Arial|Fraunces)\b/i.test(css), 'no banned font family'); assert.ok(!/gradient\([^)]*(#7c5cff|violet|indigo|purple)/i.test(css), 'no violet gradient');
+  r = await call('GET', '/login', {}); assert.ok(r.text.includes('class="stage"') && !/ style="/.test(r.text), 'sign-in page uses the asymmetric layout and no inline styles');
+  r = await call('GET', '/api-keys', { jar: A }); assert.ok(r.text.includes('/api/v1') && r.text.includes('Connect billing software'));
+  assert.ok(!/ style="/.test((await call('GET', '/', { jar: A })).text), 'dashboard has no inline styles (strict CSP)');
+  await post(A, '/api-keys/add', { name: 'fossbilling', scopes: 'write', ips: '' });
+  const made = (await flashOf(A, '/api-keys')).flash; const tok = /Key: (hpk_[a-f0-9]{8}_[a-f0-9]{48})/.exec(made); assert.ok(tok, 'the key is shown once: ' + made);
+  const apiPing = (k) => call('GET', '/api/v1/ping', { headers: { Authorization: 'Bearer ' + k } });
+  assert.equal((await apiPing(tok[1])).status, 200);
+  r = await call('GET', '/api-keys', { jar: A }); assert.ok(r.text.includes('fossbilling') && !r.text.includes(tok[1]) && !r.text.includes(tok[1].split('_')[2]), 'the key is never shown again');
+  await post(A, '/api-keys/add', { name: 'fossbilling', scopes: 'read', ips: '' }); assert.match((await flashOf(A, '/api-keys')).flash, /already exists/);
+  await post(A, '/api-keys/add', { name: 'bad-ip', scopes: 'read', ips: 'not-an-ip' }); assert.match((await flashOf(A, '/api-keys')).flash, /./);
+  await post(A, '/api-keys/revoke', { id: tok[1].split('_')[1] }); assert.equal((await apiPing(tok[1])).status, 401, 'revoked key stops working');
 
   /* ---------- app installer pages and validation (nothing may be created on bad input) ---------- */
   r = await call('GET', '/sites/new', { jar: A });

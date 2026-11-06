@@ -1,4 +1,4 @@
-# 🚀 HostPanel 1.0.7
+# 🚀 HostPanel 1.0.8
 
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -232,6 +232,13 @@ sudo bash install.sh
 ## 🧪 Testing & Verification Note
 
 This release has undergone extensive dry-run verification (form validations, session handling, path traversal/symlink attack prevention, error rollbacks, and Nginx syntax verification). Server-level dependencies requiring live internet environments (Let's Encrypt validation, SFTP chroot jails, runtime PHP-FPM pools) should be validated on a test VPS or snapshot before production deployment.
+
+## Version 1.0.8
+- **Billing API (`/api/v1`).** Free and open-source billing software (FOSSBilling, Paymenter, your own scripts) can now provision hosting: create a service (client login + website), suspend and unsuspend, change password, reset the SFTP password, change plan, read disk usage and terminate. Keys are created under **Billing API** in the panel, shown once, stored only as a hash, scoped `read` / `write`, and can be limited to the billing server's IP. Creating a service is safe to retry (same `domain` + `externalId`), failed requests leave nothing behind, and secrets never reach the audit log. Full reference: `docs/BILLING-API.md`; machine-readable spec at `/api/v1/openapi.json`.
+- **Suspension is a real state now.** A suspended website answers 503 (certificates keep renewing), the site user's SFTP/SSH/cron login is closed and its processes stopped, Node.js / Python services are stopped, and the client cannot open that website in the panel. Reversible from the API.
+- **FOSSBilling module** in `integrations/fossbilling/Hostpanel.php` (written against the interface of FOSSBilling's bundled server managers; try it on a test order first).
+- **New look ("Ledger").** One paper tone, one ink, one accent (`#BA3407` light / `#FF6A3D` dark, 4.9:1 and 6.5:1 on paper); Instrument Serif for titles, Instrument Sans for text, JetBrains Mono for data; fonts are bundled (OFL, `public/fonts/LICENSES.txt`), so the strict CSP only gained `font-src 'self'`. 12-column grid with 80px page margins, asymmetric 7/5 layouts, no gradients, no shadows, square corners, and status shown by shape as well as colour. `test/source-check.sh` now fails if a banned font or a violet gradient returns.
+- Limits are **recorded and reported, not enforced**, and bandwidth is not measured; see section 6 of the API document.
 
 ## Version 1.0.7
 - **Installing PHP 8.4 / 8.5 now works on newer Ubuntu releases.** The ondrej PPA has nothing for Ubuntu 26.04, and adding it broke every `apt-get update`. The task now picks the source by Ubuntu release: the Ubuntu archive when it already has the version (PHP 8.5 on 26.04), the ondrej PPA on 22.04 / 24.04, packages.sury.org on newer releases, and it stops without changing anything when no source exists. A leftover ondrej PPA entry from the failed attempt is removed automatically.
